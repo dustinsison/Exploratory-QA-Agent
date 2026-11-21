@@ -28,9 +28,6 @@ Partial Friend Class QaForm
     Private ReadOnly ShowBrowser As New CheckBox With {.Text = "Show live browser", .AutoSize = True, .Checked = True}
     Private ReadOnly HistoryInput As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList}
     Private ReadOnly History As New List(Of RunInputs)
-    Private Shared ReadOnly HistoryPath As String = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ExploratoryQaAgent", "history.json")
-    Private Shared ReadOnly AssetSettingsPath As String = Path.Combine(Path.GetDirectoryName(HistoryPath), "asset-origins.json")
     Private ReadOnly AssetSettings As New Dictionary(Of String, Dictionary(Of String, Boolean))(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly AssetsTab As New TabPage("Asset origins")
     Private ReadOnly AssetList As New CheckedListBox With {.Dock = DockStyle.Fill, .CheckOnClick = True}
@@ -163,7 +160,7 @@ Partial Friend Class QaForm
             End If
         Catch ex As Exception
             StatusText.Text = "Could not load Ollama models."
-            Output.AppendText(ex.Message & Environment.NewLine)
+            Output.AppendText(ex.GetBaseException().Message & Environment.NewLine)
         Finally
             RefreshModels.Enabled = True
             RunButton.Enabled = ModelInput.SelectedIndex >= 0
@@ -272,7 +269,7 @@ Partial Friend Class QaForm
                 If saved IsNot Nothing Then History.AddRange(saved)
             End If
         Catch ex As Exception
-            Output.AppendText("Could not read run history: " & ex.Message & Environment.NewLine)
+            Output.AppendText("Could not read run history: " & ex.GetBaseException().Message & Environment.NewLine)
         End Try
         UpdateHistory()
     End Sub
@@ -336,7 +333,7 @@ Partial Friend Class QaForm
         Try
             If Player.CoreWebView2 Is Nothing Then
                 Dim environment = Await CoreWebView2Environment.CreateAsync(
-                    userDataFolder:=Path.Combine(Path.GetDirectoryName(HistoryPath), "WebView2"))
+                    userDataFolder:=Path.Combine(AppDataDirectory, "WebView2"))
                 Await Player.EnsureCoreWebView2Async(environment)
             End If
             Player.CoreWebView2.SetVirtualHostNameToFolderMapping("qa-recording.invalid", videoFolder,
@@ -385,7 +382,7 @@ Partial Friend Class QaForm
                 AssetSettings(siteEntry.Key) = New Dictionary(Of String, Boolean)(siteEntry.Value, StringComparer.OrdinalIgnoreCase)
             Next
         Catch ex As Exception
-            Output.AppendText("Could not read asset origin settings: " & ex.Message & Environment.NewLine)
+            Output.AppendText("Could not read asset origin settings: " & ex.GetBaseException().Message & Environment.NewLine)
         End Try
     End Sub
 

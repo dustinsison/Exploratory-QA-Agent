@@ -3,7 +3,6 @@ Imports System.Text.Json
 Imports System.Windows.Forms
 
 Partial Friend Class QaForm
-    Private Shared ReadOnly ProfilePath As String = Path.Combine(Path.GetDirectoryName(HistoryPath), "profiles.json")
     Private ReadOnly Profiles As New Dictionary(Of String, WebsiteProfile)(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly ProfilesTab As New TabPage("Website profiles")
     Private ReadOnly ProfilePicker As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Width = 245}
@@ -74,7 +73,7 @@ Partial Friend Class QaForm
                 If Profiles.Count > 0 Then WriteProfiles()
             End If
         Catch ex As Exception
-            Output.AppendText("Could not load website profiles: " & ex.Message & Environment.NewLine)
+            Output.AppendText("Could not load website profiles: " & ex.GetBaseException().Message & Environment.NewLine)
         End Try
         RefreshProfilePicker()
     End Sub
