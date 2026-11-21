@@ -11,7 +11,6 @@ Partial Friend Class QaForm
     Private Shared ReadOnly CredentialGroup As New Regex(
         "\b(?:using|with)\s+(?:the\s+)?([a-z][a-z0-9_-]*)\s+credentials\b",
         RegexOptions.IgnoreCase Or RegexOptions.CultureInvariant)
-    Private Shared ReadOnly VariableKinds As String() = {"email", "password", "phone", "text"}
 
     Private Sub OpenProfileVariables(sender As Object, args As EventArgs)
         Dim origin = TryCast(ProfilePicker.SelectedItem, String)
@@ -30,15 +29,11 @@ Partial Friend Class QaForm
             layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
             Dim names As New ListBox With {.Dock = DockStyle.Fill}
             Dim name As New TextBox With {.PlaceholderText = "test_email"}
-            Dim kind As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList}
-            kind.Items.AddRange(VariableKinds)
-            kind.SelectedIndex = 0
             Dim value As New TextBox
-            Dim message As New Label With {.AutoSize = True, .Text = "In a charter, reference a variable as {{test_email}}."}
+            Dim message As New Label With {.AutoSize = True, .Text = "Use descriptive names such as mx1_phone or mx1_password."}
             dialog.Controls.Add(layout)
             AddFullRow(layout, names, SizeType.Percent)
             AddField(layout, "Name", name)
-            AddField(layout, "Type", kind)
             AddField(layout, "Value", value)
             AddFullRow(layout, message, SizeType.AutoSize)
 
@@ -53,7 +48,6 @@ Partial Friend Class QaForm
                 Dim selected = TryCast(names.SelectedItem, String)
                 If selected Is Nothing Then Return
                 name.Text = selected
-                kind.SelectedItem = saved(selected).Kind
                 value.Clear()
                 message.Text = "Leave Value blank to keep it, or enter a replacement."
             End Sub
@@ -79,7 +73,7 @@ Partial Friend Class QaForm
                                                             Encoding.UTF8.GetBytes(origin), DataProtectionScope.CurrentUser)
                         encrypted = Convert.ToBase64String(encoded)
                     End If
-                    saved(key) = New SavedVariable With {.Kind = CStr(kind.SelectedItem), .EncryptedValue = encrypted}
+                    saved(key) = New SavedVariable With {.EncryptedValue = encrypted}
                     WriteProfiles()
                     value.Clear()
                     refresh()
@@ -138,7 +132,7 @@ Partial Friend Class QaForm
                 Throw New InvalidOperationException("Save {{" & key & "}} again under this Windows account.", ex)
             End Try
             Try
-                values.Add(key, New With {.kind = saved.Kind, .value = Encoding.UTF8.GetString(decoded)})
+                values.Add(key, New With {.value = Encoding.UTF8.GetString(decoded)})
             Finally
                 CryptographicOperations.ZeroMemory(decoded)
             End Try
@@ -148,6 +142,5 @@ Partial Friend Class QaForm
 End Class
 
 Friend Class SavedVariable
-    Public Property Kind As String = ""
     Public Property EncryptedValue As String = ""
 End Class

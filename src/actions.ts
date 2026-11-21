@@ -69,6 +69,7 @@ export async function availableActions(page: Page, snapshot: string, includePass
 export async function fieldInputType(target: Locator): Promise<string> {
   return target.evaluate(element => {
     if (!(element instanceof HTMLInputElement)) return 'text';
+    if (element.autocomplete.split(' ').includes('one-time-code')) return 'one-time-code';
     if (['text', 'number', 'tel'].includes(element.type) &&
       (element.inputMode === 'tel' || element.autocomplete.split(' ').some(token => /^tel(?:-|$)/.test(token)))) {
       return 'tel';

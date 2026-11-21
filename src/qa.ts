@@ -186,7 +186,7 @@ try {
       const pageState = JSON.stringify([page.url(), snapshot]);
       const sameOrigin = new URL(page.url()).origin === start.origin;
       const hasKind = (kind: string) => sameOrigin && [...variables.values()].some(variable => variable.kind === kind);
-      const available = (await availableActions(page, snapshot, hasKind('password'), hasKind('phone'))).filter(({ kind, role, name, option }) =>
+      const available = (await availableActions(page, snapshot, hasKind('password') || hasKind('pin') || hasKind('otp'), hasKind('phone'))).filter(({ kind, role, name, option }) =>
         kind === 'fill' || !attemptedActions.has(JSON.stringify([pageState, kind, role, name, option])));
       const searchFields = available.filter(action => action.kind === 'fill' && action.role === 'searchbox');
       const searchButtons = available.filter(action => action.kind === 'click' && action.role === 'button'
@@ -195,7 +195,7 @@ try {
       const prioritizeSearch: boolean = Boolean(searchQuery && searchProgress !== 'done' && searchActions.length
         && (searchProgress === 'submit' || searchButtons.length));
       const compatible = (fieldType: string | undefined, name: string) => fieldType && sameOrigin
-        ? [...variables].filter(([, variable]) => acceptsVariable(variable.kind, fieldType, name)).map(([key]) => key)
+        ? [...variables].filter(([key, variable]) => acceptsVariable(variable.kind, fieldType, name, key)).map(([key]) => key)
         : [];
       const credentialChoices = enteredCredentialFlow && !filledProfileVariable
         ? available.filter(({ fieldType, name }) => compatible(fieldType, name).length)
@@ -350,12 +350,12 @@ try {
         else if (action === 'fill') {
           const type = await fieldInputType(target);
           if (reference && (!savedValue || new URL(page.url()).origin !== start.origin
-            || !acceptsVariable(variables.get(reference)!.kind, type, name))) {
+            || !acceptsVariable(variables.get(reference)!.kind, type, name, reference))) {
             throw new PhoneInputError('That profile variable is unavailable for this field or site.');
           }
           if (type === 'password' && !savedValue) throw new Error('Password fields require a referenced profile password.');
           if (phoneForm && acceptsVariable('phone', type, name) && !savedValue) {
-            throw new PhoneInputError('This field requires a saved variable of type phone.');
+            throw new PhoneInputError('This field needs a saved phone variable such as mx1_phone.');
           }
           if (typeof input !== 'string') throw new Error('The selected field requires a value.');
           if (reference && variables.get(reference)?.kind === 'phone') {
