@@ -10,7 +10,7 @@ interface BrowserAction {
 }
 
 export async function availableActions(page: Page, snapshot: string, includePasswords = false): Promise<BrowserAction[]> {
-  const controls = /^\s*- (button|link|textbox|searchbox|combobox|checkbox|radio|tab)(?: ("(?:[^"\\]|\\.)*"))?(?=\s|:|$)([^\n]*)/gm;
+  const controls = /^\s*- (button|link|textbox|searchbox|combobox|checkbox|radio|tab|spinbutton)(?: ("(?:[^"\\]|\\.)*"))?(?=\s|:|$)([^\n]*)/gm;
   const actions: BrowserAction[] = [];
   const seen = new Set<string>();
 
@@ -34,10 +34,11 @@ export async function availableActions(page: Page, snapshot: string, includePass
       for (const option of options.slice(0, 60 - actions.length)) {
         actions.push({ kind: 'select', name, role, target, option });
       }
-    } else if (role === 'textbox' || role === 'searchbox') {
-      const fieldType = await target.getAttribute('type', { timeout: 1_000 }) ?? 'text';
+    } else if (role === 'textbox' || role === 'searchbox' || role === 'spinbutton') {
+      const fieldType = await fieldInputType(target);
       if (fieldType !== 'password' && await target.isEditable()) {
-        actions.push({ kind: 'fill', name, role, target, fieldType });
+        const fieldName = name || await target.getAttribute('placeholder', { timeout: 1_000 }) || '';
+        actions.push({ kind: 'fill', name: fieldName, role, target, fieldType });
       }
     } else {
       actions.push({ kind: 'click', name, role, target });
@@ -53,4 +54,15 @@ export async function availableActions(page: Page, snapshot: string, includePass
     }
   }
   return actions;
+}
+
+export async function fieldInputType(target: Locator): Promise<string> {
+  return target.evaluate(element => {
+    if (!(element instanceof HTMLInputElement)) return 'text';
+    if (['text', 'number', 'tel'].includes(element.type) &&
+      (element.inputMode === 'tel' || element.autocomplete.split(' ').some(token => /^tel(?:-|$)/.test(token)))) {
+      return 'tel';
+    }
+    return element.type;
+  }, undefined, { timeout: 1_000 });
 }

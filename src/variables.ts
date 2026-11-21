@@ -33,7 +33,7 @@ export function acceptsVariable(kind: VariableKind, fieldType: string, name: str
   switch (kind) {
     case 'password': return fieldType === 'password';
     case 'email': return fieldType === 'email' || (fieldType === 'text' && /e[ -]?mail|user(name)?|login/.test(label));
-    case 'phone': return fieldType === 'tel' || (fieldType === 'text' && /phone|mobile|telephone/.test(label));
+    case 'phone': return fieldType === 'tel' || (['text', 'number'].includes(fieldType) && /phone|mobile|telephone/.test(label));
     case 'text': return fieldType === 'text' && !/password|passcode|verification code/.test(label);
   }
 }
