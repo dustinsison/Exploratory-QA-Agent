@@ -1,6 +1,6 @@
 # Exploratory QA Agent
 
-Give the agent a URL and a plain-English testing charter. A local Ollama model chooses actions from the browser’s accessibility snapshot. Playwright executes them and saves a Markdown report with the recorded steps, a final screenshot, and a link to the browser recording. The runner needs no API key.
+Give the agent a URL and a plain-English testing charter. The runner builds a list of available actions from the browser’s accessibility snapshot and native dropdowns. A local Ollama model uses the charter, page state, and test history to choose the next action. The list refreshes after each decision. Playwright executes them and saves a Markdown report with the recorded steps, a final screenshot, and a link to the browser recording. The runner needs no API key.
 
 ## Run the storefront demo
 
