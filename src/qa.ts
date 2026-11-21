@@ -3,9 +3,10 @@ import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 import { availableActions } from './actions.js';
+import { isYouTubeEmbedRequest } from './youtube.js';
 
 const { values } = parseArgs({
-  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true } },
+  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true }, 'allow-youtube-embeds': { type: 'boolean' } },
 });
 const storefront = values.storefront === true;
 const charter = storefront
@@ -57,6 +58,7 @@ try {
     if (assetOrigins.has(origin) && request.method() === 'GET' && assetTypes.has(request.resourceType())) {
       return route.continue();
     }
+    if (values['allow-youtube-embeds'] && isYouTubeEmbedRequest(request, start.origin)) return route.continue();
     return route.abort();
   });
   const page = await context.newPage();
