@@ -33,7 +33,7 @@ Partial Friend Class QaForm
             Dim kind As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList}
             kind.Items.AddRange(VariableKinds)
             kind.SelectedIndex = 0
-            Dim value As New TextBox With {.UseSystemPasswordChar = True}
+            Dim value As New TextBox
             Dim message As New Label With {.AutoSize = True, .Text = "In a charter, reference a variable as {{test_email}}."}
             dialog.Controls.Add(layout)
             AddFullRow(layout, names, SizeType.Percent)
