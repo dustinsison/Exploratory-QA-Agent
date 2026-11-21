@@ -25,6 +25,8 @@ Friend Class QaForm
     Private ReadOnly YouTube As New CheckBox With {.Text = "Allow YouTube embeds", .AutoSize = True}
     Private ReadOnly AssetInput As New TextBox With {.PlaceholderText = "https://c0.wp.com"}
     Private ReadOnly RunButton As New Button With {.Text = "Run test", .AutoSize = True, .Enabled = False}
+    Private ReadOnly StopButton As New Button With {.Text = "Stop run", .AutoSize = True, .Enabled = False}
+    Private ActiveRunner As Process
     Private ReadOnly OpenButton As New Button With {.Text = "Open artifacts", .AutoSize = True, .Enabled = False}
     Private ReadOnly StatusText As New Label With {.AutoSize = True}
     Private ReadOnly Output As New TextBox With {
@@ -58,6 +60,7 @@ Friend Class QaForm
 
         Dim buttons As New FlowLayoutPanel With {.AutoSize = True}
         buttons.Controls.Add(RunButton)
+        buttons.Controls.Add(StopButton)
         buttons.Controls.Add(OpenButton)
         buttons.Controls.Add(StatusText)
         AddFullRow(layout, buttons, SizeType.AutoSize)
@@ -66,6 +69,7 @@ Friend Class QaForm
         AddHandler Shown, AddressOf LoadModels
         AddHandler RefreshModels.Click, AddressOf LoadModels
         AddHandler RunButton.Click, AddressOf RunTest
+        AddHandler StopButton.Click, AddressOf StopRun
         AddHandler OpenButton.Click, AddressOf OpenArtifacts
         AddHandler FormClosing, Sub(sender, args)
                                     If Running Then args.Cancel = True
@@ -140,11 +144,11 @@ Friend Class QaForm
             Dim repo = FindRepository()
             Dim startInfo As New ProcessStartInfo("node") With {
                 .UseShellExecute = False, .CreateNoWindow = True, .WorkingDirectory = repo,
-                .RedirectStandardOutput = True, .RedirectStandardError = True,
+                .RedirectStandardOutput = True, .RedirectStandardError = True, .RedirectStandardInput = True,
                 .StandardOutputEncoding = Encoding.UTF8, .StandardErrorEncoding = Encoding.UTF8
             }
             For Each argument In {"--import", "tsx", "src/qa.ts", "--url", address.AbsoluteUri,
-                                  "--charter", CharterInput.Text.Trim(), "--model", CStr(ModelInput.SelectedItem)}
+                                  "--charter", CharterInput.Text.Trim(), "--model", CStr(ModelInput.SelectedItem), "--desktop-control"}
                 startInfo.ArgumentList.Add(argument)
             Next
             If YouTube.Checked Then startInfo.ArgumentList.Add("--allow-youtube-embeds")
@@ -156,6 +160,8 @@ Friend Class QaForm
             Using runner As New Process With {.StartInfo = startInfo}
                 AddHandler runner.ErrorDataReceived, AddressOf ShowRunnerOutput
                 runner.Start()
+                ActiveRunner = runner
+                StopButton.Enabled = True
                 runner.BeginErrorReadLine()
                 Dim reportTask = runner.StandardOutput.ReadToEndAsync()
                 Await runner.WaitForExitAsync()
@@ -168,15 +174,32 @@ Friend Class QaForm
                         OpenButton.Enabled = True
                     End If
                 End If
-                StatusText.Text = If(runner.ExitCode = 0, "Run finished.", "Run incomplete or failed.")
+                Select Case runner.ExitCode
+                    Case 0 : StatusText.Text = "Run finished."
+                    Case 130 : StatusText.Text = "Run stopped."
+                    Case Else : StatusText.Text = "Run incomplete or failed."
+                End Select
             End Using
         Catch ex As Exception
             StatusText.Text = "Could not run the agent."
             Output.AppendText(ex.Message & Environment.NewLine)
         Finally
+            ActiveRunner = Nothing
+            StopButton.Enabled = False
             Running = False
             RefreshModels.Enabled = True
             RunButton.Enabled = True
+        End Try
+    End Sub
+
+    Private Sub StopRun(sender As Object, args As EventArgs)
+        If ActiveRunner Is Nothing OrElse ActiveRunner.HasExited Then Return
+        StopButton.Enabled = False
+        StatusText.Text = "Stopping and saving evidence…"
+        Try
+            ActiveRunner.StandardInput.Close()
+        Catch ex As IOException
+            Output.AppendText(ex.Message & Environment.NewLine)
         End Try
     End Sub
 
