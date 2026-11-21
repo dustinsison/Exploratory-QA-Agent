@@ -49,6 +49,9 @@ const browser = await chromium.launch({ headless: !values.headed, slowMo: storef
 let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
 const steps: string[] = [];
 const navigationIssues: string[] = [];
+const phoneNetworkIssues = new Set<string>();
+let observingPhoneRequests = false;
+const isPageApi = (resourceType: string) => resourceType === 'fetch' || resourceType === 'xhr';
 function recordNavigationIssue(message: string) {
   const detail = redact(message);
   navigationIssues.push(detail);
@@ -116,6 +119,9 @@ try {
       blockedAssetOrigins.add(origin);
       console.error(`QA_BLOCKED_ASSET ${JSON.stringify([start.origin, origin])}`);
     }
+    if (observingPhoneRequests && isPageApi(request.resourceType())) {
+      phoneNetworkIssues.add(`The runner blocked an off-site page request to ${origin}.`);
+    }
     return route.abort();
   });
   await context.exposeBinding('recordQaMediaEvent', ({ frame }, event: unknown) => {
@@ -138,12 +144,21 @@ try {
   });
   const page = await context.newPage();
   page.on('requestfailed', request => {
+    if (observingPhoneRequests && isPageApi(request.resourceType())) {
+      const { origin } = new URL(request.url());
+      if (origin === start.origin) {
+        phoneNetworkIssues.add(`A page request to ${origin} failed — ${request.failure()?.errorText ?? 'unknown error'}.`);
+      }
+    }
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
       recordNavigationIssue(`Navigation to ${displayUrl(new URL(request.url()))} failed — ${request.failure()?.errorText ?? 'unknown error'}.`);
     }
   });
   page.on('response', response => {
     const request = response.request();
+    if (observingPhoneRequests && response.status() >= 400 && isPageApi(request.resourceType())) {
+      phoneNetworkIssues.add(`A page request to ${new URL(response.url()).origin} returned HTTP ${response.status()}.`);
+    }
     if (response.status() >= 400 && request.isNavigationRequest() && request.frame() === page.mainFrame()) {
       recordNavigationIssue(`Navigation to ${displayUrl(new URL(response.url()))} returned HTTP ${response.status()}.`);
     }
@@ -392,6 +407,7 @@ try {
           }
           if (typeof input !== 'string') throw new Error('The selected field requires a value.');
           if (reference && variables.get(reference)?.kind === 'phone') {
+            observingPhoneRequests = true;
             const note = await fillSavedPhone(page, target, input, start.origin);
             const phonePageUrl = page.url();
             await target.blur({ timeout: 1_000 }).catch(() => {});
@@ -477,6 +493,11 @@ try {
       '', '## Credential field diagnostics', '',
       `Saved variables available to this run: ${[...variables].map(([name, entry]) => `\`${name}\` (${entry.kind})`).join(', ')}.`,
       '', ...[...credentialDiagnostics].map(info => `- ${info}`),
+    ] : []),
+    ...(phoneNetworkIssues.size || phoneNextState === 'disabled' ? [
+      '', '## Phone step network diagnostics', '',
+      ...(phoneNetworkIssues.size ? [...phoneNetworkIssues].map(issue => `- ${redact(issue)}`)
+        : ['No blocked or failed page API requests were observed during the phone step.']),
     ] : []),
     '', '## Browser evidence', '', '[Final screenshot](final.png)',
     ...(videoLink ? ['', `[Watch the test recording](${videoLink})`] : []), '',
