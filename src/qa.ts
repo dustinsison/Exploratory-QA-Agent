@@ -5,7 +5,7 @@ import { chromium } from 'playwright';
 import { availableActions } from './actions.js';
 
 const { values } = parseArgs({
-  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' } },
+  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true } },
 });
 const storefront = values.storefront === true;
 const charter = storefront
@@ -22,6 +22,15 @@ const start = new URL(url);
 if (!['http:', 'https:'].includes(start.protocol) || start.username || start.password) {
   throw new Error('Use an HTTP(S) URL without embedded credentials.');
 }
+const assetOrigins = new Set(values['asset-origin']?.map(value => {
+  const asset = new URL(value);
+  if (!['http:', 'https:'].includes(asset.protocol) || asset.username || asset.password
+    || asset.pathname !== '/' || asset.search || asset.hash) {
+    throw new Error('Each --asset-origin must be an HTTP(S) origin without a path or credentials.');
+  }
+  return asset.origin;
+}));
+const assetTypes = new Set(['stylesheet', 'script', 'image', 'font', 'media']);
 const model = values.model?.trim() || 'qwen2.5:7b';
 const browser = await chromium.launch({ slowMo: storefront ? 500 : 0 });
 let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
@@ -42,8 +51,13 @@ try {
     recordVideo: { dir: join(output, 'video') },
   });
   await context.route('**/*', route => {
-    if (new URL(route.request().url()).origin !== start.origin) return route.abort();
-    return route.continue();
+    const request = route.request();
+    const { origin } = new URL(request.url());
+    if (origin === start.origin) return route.continue();
+    if (assetOrigins.has(origin) && request.method() === 'GET' && assetTypes.has(request.resourceType())) {
+      return route.continue();
+    }
+    return route.abort();
   });
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
@@ -192,8 +206,12 @@ Choose 0 when the checks are complete or blocked. In summary, describe what you 
       steps.push(notice);
     } catch (error) {
       const notice = `${description} failed — ${String(error).split('\n')[0]}`;
-      console.error(notice);
+      console.error(error instanceof Error ? error.message : notice);
       steps.push(notice);
+      if (error instanceof Error) {
+        const detail = error.message.split('Call log:')[1]?.trim();
+        if (detail) steps.push(`Playwright call log: ${detail.replace(/\s*\n\s*/g, ' ').slice(0, 900)}`);
+      }
     }
   }
 

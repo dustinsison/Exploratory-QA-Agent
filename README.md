@@ -27,6 +27,6 @@ The runner uses Ollama at `127.0.0.1:11434`. To try a smaller model on your PC, 
 
 ## Scope
 
-Use a local or authorized test site and synthetic inputs. The runner allows requests to the starting origin, which can limit sites that use external assets or identity providers. Page snapshots go to the local Ollama service, and reports, screenshots, and recordings may contain test inputs or page content. The runner covers functional UI checks such as search and filters. Sign-in testing with managed test credentials is a future milestone.
+Use a local or authorized test site and synthetic inputs. The runner defaults to same-origin requests. If a site needs a trusted CDN for scripts, styles, images, fonts, or media, add its origin with `--asset-origin https://cdn.example.com`. Repeat the option for additional CDNs. The option does not authorize cross-origin page navigation or API requests. Page snapshots go to the local Ollama service, and reports, screenshots, and recordings may contain test inputs or page content. The runner covers functional UI checks such as search and filters. Sign-in testing with managed test credentials is a future milestone.
 
 Run `npm run check` to type-check the project.
