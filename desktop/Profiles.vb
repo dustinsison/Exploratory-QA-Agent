@@ -10,8 +10,8 @@ Partial Friend Class QaForm
     Private ReadOnly SavedRuns As New ListBox With {.Dock = DockStyle.Fill, .DisplayMember = NameOf(ProfileRun.DisplayText)}
     Private Const EmptyReport As String = "Run a test or select a previous run to view its report."
     Private ReadOnly ReportTab As New TabPage("Report")
-    Private ReadOnly ReportText As New TextBox With {
-        .Dock = DockStyle.Fill, .Multiline = True, .ReadOnly = True, .ScrollBars = ScrollBars.Vertical, .Text = EmptyReport
+    Private ReadOnly ReportText As New RichTextBox With {
+        .Dock = DockStyle.Fill, .Multiline = True, .ReadOnly = True, .ScrollBars = RichTextBoxScrollBars.Vertical, .DetectUrls = False, .Text = EmptyReport
     }
 
     Private Sub InitializeProfiles()
@@ -211,13 +211,30 @@ Partial Friend Class QaForm
     Private Async Function ShowRunEvidence(reportPath As String) As Task
         Dim report = File.ReadAllText(reportPath)
         ResetRunEvidence()
-        ReportText.Text = report
-        ReportText.SelectionStart = 0
+        RenderReport(report)
         ArtifactFolder = Path.GetDirectoryName(reportPath)
         OpenButton.Enabled = True
         If EvidenceTabs.SelectedTab IsNot AssetsTab Then EvidenceTabs.SelectedTab = ReportTab
         Await LoadRecording(ArtifactFolder)
     End Function
+
+    Private Sub RenderReport(markdown As String)
+        ReportText.Clear()
+        Using heading As New Drawing.Font(ReportText.Font, Drawing.FontStyle.Bold)
+            For Each line In markdown.ReplaceLineEndings(vbLf).Split(ChrW(10))
+                Dim text = line
+                Dim format = ReportText.Font
+                If line.StartsWith("# ", StringComparison.Ordinal) OrElse line.StartsWith("## ", StringComparison.Ordinal) Then
+                    text = line.Substring(line.IndexOf(" "c) + 1)
+                    format = heading
+                End If
+                ReportText.SelectionFont = format
+                ReportText.AppendText(text & vbCrLf)
+            Next
+        End Using
+        ReportText.Select(0, 0)
+        ReportText.ScrollToCaret()
+    End Sub
 
     Private Sub ImportReport(sender As Object, args As EventArgs)
         Dim origin = TryCast(ProfilePicker.SelectedItem, String)
