@@ -34,14 +34,24 @@ export function acceptsVariable(kind: VariableKind, fieldType: string, name: str
     case 'password': return fieldType === 'password';
     case 'email': return fieldType === 'email' || (fieldType === 'text' && /e[ -]?mail|user(name)?|login/.test(label));
     case 'phone': return fieldType === 'tel' || (['text', 'number'].includes(fieldType) && /phone|mobile|telephone/.test(label));
-    case 'text': return fieldType === 'text' && !/password|passcode|verification code/.test(label);
+    case 'text': return fieldType === 'text' && !/password|passcode|verification code|phone|mobile|telephone/.test(label);
   }
 }
 
 export function redactVariables(text: string, variables: Map<string, ProfileVariable>): string {
-  const forms = [...variables.values()].flatMap(({ value }) => [
-    value, JSON.stringify(value).slice(1, -1), encodeURIComponent(value),
-  ]).sort((first, second) => second.length - first.length);
+  const forms = [...variables.values()].flatMap(({ value, kind }) => {
+    const values = [value, JSON.stringify(value).slice(1, -1), encodeURIComponent(value)];
+    if (kind === 'phone') {
+      const digits = value.replace(/\D/g, '');
+      if (digits.length >= 6) values.push(digits);
+      if (value.trim().startsWith('+') || /^1\d{10}$/.test(digits)) {
+        for (let length = 1; length <= 3 && digits.length - length >= 6; length++) {
+          values.push(digits.slice(length));
+        }
+      }
+    }
+    return values;
+  }).sort((first, second) => second.length - first.length);
   for (const value of new Set(forms)) text = text.replaceAll(value, '[profile value]');
   return text;
 }
