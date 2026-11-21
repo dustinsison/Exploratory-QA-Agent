@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 
@@ -15,6 +15,7 @@ if (!['http:', 'https:'].includes(start.protocol) || start.username || start.pas
 }
 const model = values.model?.trim() || 'qwen2.5:7b';
 const browser = await chromium.launch();
+let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
 const steps: string[] = [];
 let summary = 'Step limit reached. Review the recorded observations.';
 let finding = '';
@@ -23,7 +24,11 @@ const maxSteps = 15;
 try {
   await mkdir('artifacts', { recursive: true });
   const output = await mkdtemp(join('artifacts', 'run-'));
-  const context = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: false });
+  context = await browser.newContext({
+    serviceWorkers: 'block',
+    acceptDownloads: false,
+    recordVideo: { dir: join(output, 'video') },
+  });
   await context.route('**/*', route => {
     if (new URL(route.request().url()).origin !== start.origin) return route.abort();
     return route.continue();
@@ -98,12 +103,21 @@ try {
   }
 
   await page.screenshot({ path: join(output, 'final.png'), timeout: 5_000 });
+  const video = page.video();
+  await context.close();
+  context = undefined;
+  const videoLink = video && relative(output, await video.path()).split('\\').join('/');
   await writeFile(join(output, 'report.md'), [
     '# Exploratory QA report', '', values.charter, '', summary, finding,
     '## Recorded steps', '', ...steps.map((step, index) => `${index + 1}. ${step}`),
-    '', '## Final browser state', '', '[Screenshot](final.png)', '',
+    '', '## Browser evidence', '', '[Final screenshot](final.png)',
+    ...(videoLink ? ['', `[Watch the test recording](${videoLink})`] : []), '',
   ].join('\n'));
   console.log(join(output, 'report.md'));
 } finally {
-  await browser.close();
+  try {
+    await context?.close();
+  } finally {
+    await browser.close();
+  }
 }
