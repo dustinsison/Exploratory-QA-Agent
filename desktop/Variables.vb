@@ -8,6 +8,9 @@ Imports System.Windows.Forms
 Partial Friend Class QaForm
     Private Shared ReadOnly VariableName As New Regex("^[a-z][a-z0-9_-]*$", RegexOptions.IgnoreCase Or RegexOptions.CultureInvariant)
     Private Shared ReadOnly VariableReference As New Regex("\{\{([a-z][a-z0-9_-]*)\}\}", RegexOptions.IgnoreCase Or RegexOptions.CultureInvariant)
+    Private Shared ReadOnly CredentialGroup As New Regex(
+        "\b(?:using|with)\s+(?:the\s+)?([a-z][a-z0-9_-]*)\s+credentials\b",
+        RegexOptions.IgnoreCase Or RegexOptions.CultureInvariant)
     Private Shared ReadOnly VariableKinds As String() = {"email", "password", "phone", "text"}
 
     Private Sub OpenProfileVariables(sender As Object, args As EventArgs)
@@ -93,9 +96,22 @@ Partial Friend Class QaForm
 
     Private Sub AddProfileVariables(startInfo As ProcessStartInfo, origin As String, charter As String)
         startInfo.Environment.Remove("QA_PROFILE_VARIABLES")
-        Dim requested = VariableReference.Matches(charter).Select(Function(entry) entry.Groups(1).Value.ToLowerInvariant()).Distinct()
+        Dim requested As New HashSet(Of String)(
+            VariableReference.Matches(charter).Select(Function(entry) entry.Groups(1).Value.ToLowerInvariant()),
+            StringComparer.OrdinalIgnoreCase)
         Dim profile As WebsiteProfile = Nothing
         Profiles.TryGetValue(origin, profile)
+        For Each entry As Match In CredentialGroup.Matches(charter)
+            Dim group = entry.Groups(1).Value.ToLowerInvariant()
+            Dim matching = If(profile?.Variables.Keys.AsEnumerable(), Enumerable.Empty(Of String)()).
+                Where(Function(key) key.StartsWith(group & "_", StringComparison.OrdinalIgnoreCase) OrElse
+                                     key.StartsWith(group & "-", StringComparison.OrdinalIgnoreCase)).ToArray()
+            If matching.Length = 0 Then
+                Throw New ArgumentException("No variables match """ & group & " credentials"". Save names like " &
+                                            group & "_email and " & group & "_password in this website profile.")
+            End If
+            requested.UnionWith(matching)
+        Next
         Dim values As New Dictionary(Of String, Object)
         For Each key In requested
             Dim saved As SavedVariable = Nothing
