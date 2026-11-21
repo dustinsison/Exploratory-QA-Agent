@@ -44,7 +44,13 @@ export async function fillSavedPhone(page: Page, target: Locator, value: string,
   if (new URL(page.url()).origin !== origin) throw new PhoneInputError('The phone field is outside this website profile.');
   const type = await target.getAttribute('type');
   const text = countries.length === 0 && international && type !== 'number' ? `+${digits}` : digits;
-  await target.fill(text);
+  await target.click();
+  if (new URL(page.url()).origin !== origin) throw new PhoneInputError('The phone field is outside this website profile.');
+  if (await target.inputValue()) {
+    await target.press('ControlOrMeta+a');
+    await target.press('Backspace');
+  }
+  await target.pressSequentially(text, { delay: 25 });
   return note;
 }
 
