@@ -6,7 +6,7 @@ import { availableActions } from './actions.js';
 import { isYouTubeEmbedRequest } from './youtube.js';
 
 const { values } = parseArgs({
-  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true }, 'allow-youtube-embeds': { type: 'boolean' }, 'desktop-control': { type: 'boolean' }, headed: { type: 'boolean' } },
+  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true }, 'allow-all-asset-origins': { type: 'boolean' }, 'allow-youtube-embeds': { type: 'boolean' }, 'desktop-control': { type: 'boolean' }, headed: { type: 'boolean' } },
 });
 const storefront = values.storefront === true;
 const charter = storefront
@@ -79,12 +79,12 @@ try {
     const request = route.request();
     const { origin } = new URL(request.url());
     if (origin === start.origin) return route.continue();
-    const isAsset = request.method() === 'GET' && assetTypes.has(request.resourceType());
-    if (assetOrigins.has(origin) && isAsset) {
+    const isAsset = request.method() === 'GET' && assetTypes.has(request.resourceType()) && /^https?:\/\//.test(origin);
+    if (isAsset && (values['allow-all-asset-origins'] || assetOrigins.has(origin))) {
       return route.continue();
     }
     if (values['allow-youtube-embeds'] && isYouTubeEmbedRequest(request, start.origin)) return route.continue();
-    if (values['desktop-control'] && isAsset && /^https?:\/\//.test(origin) && !blockedAssetOrigins.has(origin)) {
+    if (values['desktop-control'] && isAsset && !blockedAssetOrigins.has(origin)) {
       blockedAssetOrigins.add(origin);
       console.error(`QA_BLOCKED_ASSET ${JSON.stringify([start.origin, origin])}`);
     }

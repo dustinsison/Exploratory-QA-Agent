@@ -34,6 +34,9 @@ Partial Friend Class QaForm
     Private ReadOnly AssetSettings As New Dictionary(Of String, Dictionary(Of String, Boolean))(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly AssetsTab As New TabPage("Asset origins")
     Private ReadOnly AssetList As New CheckedListBox With {.Dock = DockStyle.Fill, .CheckOnClick = True}
+    Private ReadOnly AllowAllAssets As New CheckBox With {
+        .Text = "Allow all asset origins", .Dock = DockStyle.Top, .Height = 28
+    }
     Private ReadOnly AssetStatus As New Label With {.Dock = DockStyle.Top, .Height = 44}
     Private ReviewingAssets As Boolean
     Private ReadOnly EvidenceTabs As New TabControl With {.Dock = DockStyle.Fill}
@@ -92,6 +95,7 @@ Partial Friend Class QaForm
         EvidenceTabs.TabPages.Add(logTab)
         EvidenceTabs.TabPages.Add(RecordingTab)
         AssetsTab.Controls.Add(AssetList)
+        AssetsTab.Controls.Add(AllowAllAssets)
         AssetsTab.Controls.Add(AssetStatus)
         EvidenceTabs.TabPages.Add(AssetsTab)
         AddFullRow(layout, EvidenceTabs, SizeType.Percent)
@@ -101,6 +105,7 @@ Partial Friend Class QaForm
         RefreshAssetList()
         AddHandler UrlInput.TextChanged, Sub(sender, args) RefreshAssetList()
         AddHandler AssetList.ItemCheck, AddressOf ChangeAssetSetting
+        AddHandler AllowAllAssets.CheckedChanged, AddressOf ChangeAllAssetSettings
         AddHandler HistoryInput.SelectionChangeCommitted, AddressOf RestoreInputs
 
         AddHandler Shown, AddressOf LoadModels
@@ -203,7 +208,12 @@ Partial Friend Class QaForm
             Next
             If inputs.YouTube Then startInfo.ArgumentList.Add("--allow-youtube-embeds")
             If inputs.ShowBrowser Then startInfo.ArgumentList.Add("--headed")
-            For Each origin In GetAllowedAssets(address.GetLeftPart(UriPartial.Authority), inputs.AssetOrigins)
+            Dim siteOrigin = address.GetLeftPart(UriPartial.Authority)
+            Dim profile As WebsiteProfile = Nothing
+            If Profiles.TryGetValue(siteOrigin, profile) AndAlso profile.AllowAllAssetOrigins Then
+                startInfo.ArgumentList.Add("--allow-all-asset-origins")
+            End If
+            For Each origin In GetAllowedAssets(siteOrigin, inputs.AssetOrigins)
                 startInfo.ArgumentList.Add("--asset-origin")
                 startInfo.ArgumentList.Add(origin)
             Next
@@ -432,6 +442,9 @@ Partial Friend Class QaForm
         ReviewingAssets = True
         Try
             AssetList.Items.Clear()
+            Dim profile As WebsiteProfile = Nothing
+            AllowAllAssets.Enabled = site <> ""
+            AllowAllAssets.Checked = Profiles.TryGetValue(site, profile) AndAlso profile.AllowAllAssetOrigins
             Dim saved As Dictionary(Of String, Boolean) = Nothing
             If site <> "" AndAlso AssetSettings.TryGetValue(site, saved) Then
                 For Each origin In saved.OrderBy(Function(entry) entry.Key)
@@ -443,9 +456,22 @@ Partial Friend Class QaForm
         End Try
         If site = "" Then
             AssetStatus.Text = "Enter a site URL to review its asset origins."
+        ElseIf AllowAllAssets.Checked Then
+            AssetStatus.Text = site & Environment.NewLine & "All asset origins are allowed on the next run."
         Else
             AssetStatus.Text = site & Environment.NewLine & "Check trusted origins to allow them on the next run. Unchecked origins stay blocked."
         End If
+    End Sub
+
+    Private Sub ChangeAllAssetSettings(sender As Object, args As EventArgs)
+        If ReviewingAssets Then Return
+        Dim origin = CurrentSite()
+        If origin = "" Then Return
+
+        GetProfile(origin).AllowAllAssetOrigins = AllowAllAssets.Checked
+        WriteProfiles()
+        RefreshProfilePicker(origin)
+        RefreshAssetList()
     End Sub
 
     Private Sub ChangeAssetSetting(sender As Object, args As ItemCheckEventArgs)

@@ -219,6 +219,7 @@ End Class
 
 Friend Class WebsiteProfile
     Public Property Url As String = ""
+    Public Property AllowAllAssetOrigins As Boolean
     Public Property Charters As New List(Of RunInputs)
     Public Property Runs As New List(Of ProfileRun)
 End Class
