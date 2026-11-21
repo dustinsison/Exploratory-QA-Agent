@@ -41,6 +41,7 @@ Partial Friend Class QaForm
     Private ReadOnly Player As New WebView2 With {.Dock = DockStyle.Fill, .Visible = False}
     Private ReadOnly PlayerStatus As New Label With {.Text = "No recording available.", .Dock = DockStyle.Fill}
     Private ReadOnly AssetInput As New TextBox With {.PlaceholderText = "https://c0.wp.com"}
+    Private ReadOnly NewSessionButton As New Button With {.Text = "New Session", .AutoSize = True}
     Private ReadOnly RunButton As New Button With {.Text = "Run test", .AutoSize = True, .Enabled = False}
     Private ReadOnly StopButton As New Button With {.Text = "Stop run", .AutoSize = True, .Enabled = False}
     Private ActiveRunner As Process
@@ -80,6 +81,7 @@ Partial Friend Class QaForm
         AddField(layout, "", options)
 
         Dim buttons As New FlowLayoutPanel With {.AutoSize = True}
+        buttons.Controls.Add(NewSessionButton)
         buttons.Controls.Add(RunButton)
         buttons.Controls.Add(StopButton)
         buttons.Controls.Add(OpenButton)
@@ -110,6 +112,7 @@ Partial Friend Class QaForm
         AddHandler ModelInput.SelectionChangeCommitted, Sub(sender, args)
             RunButton.Enabled = Not Running AndAlso RefreshModels.Enabled AndAlso ModelInput.SelectedIndex >= 0
         End Sub
+        AddHandler NewSessionButton.Click, AddressOf NewSession
         AddHandler RunButton.Click, AddressOf RunTest
         AddHandler StopButton.Click, AddressOf StopRun
         AddHandler OpenButton.Click, AddressOf OpenArtifacts
@@ -136,6 +139,7 @@ Partial Friend Class QaForm
     End Sub
 
     Private Async Sub LoadModels(sender As Object, args As EventArgs)
+        NewSessionButton.Enabled = False
         RefreshModels.Enabled = False
         RunButton.Enabled = False
         Try
@@ -163,6 +167,7 @@ Partial Friend Class QaForm
             Output.AppendText(ex.GetBaseException().Message & Environment.NewLine)
         Finally
             RefreshModels.Enabled = True
+            NewSessionButton.Enabled = True
             RunButton.Enabled = ModelInput.SelectedIndex >= 0
         End Try
     End Sub
@@ -177,16 +182,16 @@ Partial Friend Class QaForm
         End If
 
         Running = True
+        NewSessionButton.Enabled = False
         RunButton.Enabled = False
         RefreshModels.Enabled = False
-        OpenButton.Enabled = False
         HistoryInput.Enabled = False
         UrlInput.Enabled = False
         ProfilesTab.Enabled = False
         AssetsTab.Text = "Asset origins"
         Output.Clear()
         EvidenceTabs.SelectedIndex = 0
-        ResetRecording()
+        ResetRunEvidence("The report will appear here when the run saves its results.")
         StatusText.Text = "Running…"
         Dim inputs As New RunInputs With {
             .Url = address.AbsoluteUri, .Charter = CharterInput.Text.Trim(), .Model = CStr(ModelInput.SelectedItem),
@@ -231,14 +236,12 @@ Partial Friend Class QaForm
                     Output.AppendText(report & Environment.NewLine)
                     Dim reportPath = Path.GetFullPath(report, repo)
                     If File.Exists(reportPath) Then
-                        ArtifactFolder = Path.GetDirectoryName(reportPath)
-                        OpenButton.Enabled = True
                         SaveRun(address.GetLeftPart(UriPartial.Authority), New ProfileRun With {
                             .ReportPath = reportPath, .RecordedAt = DateTimeOffset.Now,
                             .Status = If(runner.ExitCode = 0, "Finished", If(runner.ExitCode = 130, "Stopped", "Incomplete")),
                             .Charter = inputs.Charter
                         })
-                        Await LoadRecording(ArtifactFolder)
+                        Await ShowRunEvidence(reportPath)
                     End If
                 End If
                 Select Case runner.ExitCode
@@ -258,8 +261,30 @@ Partial Friend Class QaForm
             HistoryInput.Enabled = History.Count > 0
             UrlInput.Enabled = True
             ProfilesTab.Enabled = True
-            RunButton.Enabled = True
+            RunButton.Enabled = ModelInput.SelectedIndex >= 0
+            NewSessionButton.Enabled = True
+            If ArtifactFolder Is Nothing Then ReportText.Text = "This run did not save a report. See Activity for details."
         End Try
+    End Sub
+
+    Private Sub NewSession(sender As Object, args As EventArgs)
+        If Running Then Return
+        HistoryInput.SelectedIndex = -1
+        UrlInput.Clear()
+        CharterInput.Clear()
+        ModelInput.SelectedIndex = -1
+        AssetInput.Clear()
+        YouTube.Checked = False
+        ShowBrowser.Checked = False
+        SavedCharters.ClearSelected()
+        SavedRuns.ClearSelected()
+        AssetsTab.Text = "Asset origins"
+        ResetRunEvidence()
+        Output.Clear()
+        StatusText.Text = "New session"
+        RunButton.Enabled = False
+        EvidenceTabs.SelectedIndex = 0
+        UrlInput.Focus()
     End Sub
 
     Private Sub ReadHistory()
@@ -324,7 +349,7 @@ Partial Friend Class QaForm
         PlayerStatus.Visible = True
     End Sub
 
-    Private Async Function LoadRecording(folder As String, Optional showTab As Boolean = True) As Task
+    Private Async Function LoadRecording(folder As String) As Task
         Dim videoFolder = Path.Combine(folder, "video")
         If Not Directory.Exists(videoFolder) Then Return
         Dim video = Directory.EnumerateFiles(videoFolder, "*.webm").OrderBy(Function(videoPath) File.GetCreationTimeUtc(videoPath)).FirstOrDefault()
@@ -336,6 +361,7 @@ Partial Friend Class QaForm
                     userDataFolder:=Path.Combine(AppDataDirectory, "WebView2"))
                 Await Player.EnsureCoreWebView2Async(environment)
             End If
+            If ArtifactFolder <> folder Then Return
             Player.CoreWebView2.SetVirtualHostNameToFolderMapping("qa-recording.invalid", videoFolder,
                                                                  CoreWebView2HostResourceAccessKind.Allow)
             Dim source = "https://qa-recording.invalid/" & Uri.EscapeDataString(Path.GetFileName(video))
@@ -345,8 +371,8 @@ Partial Friend Class QaForm
                 "style='width:100vw;height:100vh' src='" & source & "'></video></body></html>")
             PlayerStatus.Visible = False
             Player.Visible = True
-            If showTab AndAlso EvidenceTabs.SelectedTab IsNot AssetsTab Then EvidenceTabs.SelectedTab = RecordingTab
         Catch ex As Exception
+            If ArtifactFolder <> folder Then Return
             PlayerStatus.Text = "Could not load the embedded player. Use Open artifacts to play the WebM file."
             Output.AppendText(ex.Message & Environment.NewLine)
         End Try

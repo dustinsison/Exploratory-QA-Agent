@@ -8,9 +8,10 @@ Partial Friend Class QaForm
     Private ReadOnly ProfilePicker As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Width = 245}
     Private ReadOnly SavedCharters As New ListBox With {.Dock = DockStyle.Fill, .DisplayMember = NameOf(RunInputs.Charter)}
     Private ReadOnly SavedRuns As New ListBox With {.Dock = DockStyle.Fill, .DisplayMember = NameOf(ProfileRun.DisplayText)}
+    Private Const EmptyReport As String = "Run a test or select a previous run to view its report."
     Private ReadOnly ReportTab As New TabPage("Report")
     Private ReadOnly ReportText As New TextBox With {
-        .Dock = DockStyle.Fill, .Multiline = True, .ReadOnly = True, .ScrollBars = ScrollBars.Vertical
+        .Dock = DockStyle.Fill, .Multiline = True, .ReadOnly = True, .ScrollBars = ScrollBars.Vertical, .Text = EmptyReport
     }
 
     Private Sub InitializeProfiles()
@@ -193,17 +194,30 @@ Partial Friend Class QaForm
             Return
         End If
         Try
-            ReportText.Text = File.ReadAllText(run.ReportPath)
-            ArtifactFolder = Path.GetDirectoryName(run.ReportPath)
-            OpenButton.Enabled = True
-            ResetRecording()
-            EvidenceTabs.SelectedTab = ReportTab
-            Await LoadRecording(ArtifactFolder, showTab:=False)
+            Await ShowRunEvidence(run.ReportPath)
         Catch ex As Exception
             StatusText.Text = "Could not open the saved run."
             Output.AppendText(ex.Message & Environment.NewLine)
         End Try
     End Sub
+
+    Private Sub ResetRunEvidence(Optional message As String = EmptyReport)
+        ArtifactFolder = Nothing
+        OpenButton.Enabled = False
+        ReportText.Text = message
+        ResetRecording()
+    End Sub
+
+    Private Async Function ShowRunEvidence(reportPath As String) As Task
+        Dim report = File.ReadAllText(reportPath)
+        ResetRunEvidence()
+        ReportText.Text = report
+        ReportText.SelectionStart = 0
+        ArtifactFolder = Path.GetDirectoryName(reportPath)
+        OpenButton.Enabled = True
+        If EvidenceTabs.SelectedTab IsNot AssetsTab Then EvidenceTabs.SelectedTab = ReportTab
+        Await LoadRecording(ArtifactFolder)
+    End Function
 
     Private Sub ImportReport(sender As Object, args As EventArgs)
         Dim origin = TryCast(ProfilePicker.SelectedItem, String)
