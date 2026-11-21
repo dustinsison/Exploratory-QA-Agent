@@ -2,6 +2,20 @@
 
 Give the agent a URL and a plain-English testing charter. The runner builds a list of available actions from the browser’s accessibility snapshot and native dropdowns. A local Ollama model uses the charter, page state, and test history to choose the next action. The list refreshes after each decision. Playwright executes them and saves a Markdown report with the recorded steps, a final screenshot, and a link to the browser recording. The runner needs no API key.
 
+## Windows desktop app
+
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), Node.js 22 or newer, and Ollama. In PowerShell, from the repository root:
+
+```powershell
+npm ci
+npx playwright install chromium
+dotnet run --project desktop
+```
+
+Start Ollama before opening the app. The model picker lists installed models. Use **Refresh models** after downloading a model. Enter a URL and charter, choose the model, and click **Run test**. For dustinsison.com, enter `https://c0.wp.com` under **Allowed asset origins** and enable **Allow YouTube embeds** if the charter needs the background player. Enter multiple asset origins separated by commas.
+
+Click **Open artifacts** after the run to see its report, screenshot, and video. Both the app and the command line use folders such as `artifacts/run-dustinsison.com-2026-11-21-17-30-00-125/`. The name uses the starting hostname and local date and time, including milliseconds.
+
 ## Run the storefront demo
 
 Install Node.js 22 or newer and [Ollama](https://ollama.com/download). Open the Ollama app or run `ollama serve` if the service isn’t already running. From the repository folder, run these commands in PowerShell or a terminal.

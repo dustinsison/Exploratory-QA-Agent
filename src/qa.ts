@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
@@ -46,7 +46,22 @@ const maxSteps = 15;
 
 try {
   await mkdir('artifacts', { recursive: true });
-  const output = await mkdtemp(join('artifacts', 'run-'));
+  const now = new Date();
+  const pad = (value: number, width = 2) => String(value).padStart(width, '0');
+  const date = [now.getFullYear(), pad(now.getMonth() + 1), pad(now.getDate())].join('-');
+  const time = [pad(now.getHours()), pad(now.getMinutes()), pad(now.getSeconds()), pad(now.getMilliseconds(), 3)].join('-');
+  const site = start.hostname.replace(/^www\./, '').replace(/[^a-z0-9.-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 100);
+  const prefix = join('artifacts', `run-${site}-${date}-${time}`);
+  let output = prefix;
+  for (let suffix = 2; ; suffix++) {
+    try {
+      await mkdir(output);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      output = `${prefix}-${suffix}`;
+    }
+  }
   context = await browser.newContext({
     serviceWorkers: 'block',
     acceptDownloads: false,

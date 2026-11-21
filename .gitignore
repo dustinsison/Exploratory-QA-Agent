@@ -2,3 +2,5 @@ node_modules/
 artifacts/
 /recordings/
 .env
+/desktop/bin/
+/desktop/obj/
