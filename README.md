@@ -20,6 +20,10 @@ The model picker lists installed models. Use **Refresh models** after downloadin
 
 When the runner blocks a new third-party script, stylesheet, image, font, or media origin, the app opens **Asset origins** for review. Check any trusted origins you want to allow, then rerun the test. The app saves the choices per site and applies them to the next run. Enter the site's URL and reopen the tab at any time to change them. Origins entered under **Additional asset origins** are added to the same list so they can be toggled later.
 
+Open **Website profiles** to save the current site and charter or select an existing profile. Profiles are grouped by site origin, including the scheme and port. **Use charter** restores the saved inputs. **Asset permissions** opens that site's allowlist. Desktop runs with a report are added automatically. Select a past run and click **View run** to open its report, then use the **Recording** tab or **Open artifacts** to see the other evidence.
+
+Existing recent inputs and asset origins seed the profile list on first launch. To attach an older run, select its website profile and use **Import report…** to select its `report.md`. Reports stay in their original artifact folders. Imported recordings are available in the player when the run has a WebM in its `video` subfolder.
+
 Click **Stop run** to end a test early. The agent cancels its Ollama wait or finishes the current browser action, then saves the partial report and recording. Click **Open artifacts** after the run to see its report, screenshot, and video. Both the app and the command line use folders such as `artifacts/run-dustinsison.com-2026-11-21-17-30-00-125/`. The name uses the starting hostname and local date and time, including milliseconds.
 
 ## Run the storefront demo

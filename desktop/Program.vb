@@ -16,7 +16,7 @@ Module Program
     End Sub
 End Module
 
-Friend Class QaForm
+Partial Friend Class QaForm
     Inherits Form
 
     Private Shared ReadOnly Ollama As New HttpClient With {.Timeout = TimeSpan.FromSeconds(5)}
@@ -97,6 +97,7 @@ Friend Class QaForm
         AddFullRow(layout, EvidenceTabs, SizeType.Percent)
         ReadHistory()
         ReadAssetSettings()
+        InitializeProfiles()
         RefreshAssetList()
         AddHandler UrlInput.TextChanged, Sub(sender, args) RefreshAssetList()
         AddHandler AssetList.ItemCheck, AddressOf ChangeAssetSetting
@@ -179,6 +180,7 @@ Friend Class QaForm
         OpenButton.Enabled = False
         HistoryInput.Enabled = False
         UrlInput.Enabled = False
+        ProfilesTab.Enabled = False
         AssetsTab.Text = "Asset origins"
         Output.Clear()
         EvidenceTabs.SelectedIndex = 0
@@ -213,6 +215,7 @@ Friend Class QaForm
                 StopButton.Enabled = True
                 runner.BeginErrorReadLine()
                 SaveInputs(inputs)
+                SaveConfiguration(address.GetLeftPart(UriPartial.Authority), inputs)
                 Dim reportTask = runner.StandardOutput.ReadToEndAsync()
                 Await runner.WaitForExitAsync()
                 Dim report = (Await reportTask).Trim()
@@ -222,6 +225,11 @@ Friend Class QaForm
                     If File.Exists(reportPath) Then
                         ArtifactFolder = Path.GetDirectoryName(reportPath)
                         OpenButton.Enabled = True
+                        SaveRun(address.GetLeftPart(UriPartial.Authority), New ProfileRun With {
+                            .ReportPath = reportPath, .RecordedAt = DateTimeOffset.Now,
+                            .Status = If(runner.ExitCode = 0, "Finished", If(runner.ExitCode = 130, "Stopped", "Incomplete")),
+                            .Charter = inputs.Charter
+                        })
                         Await LoadRecording(ArtifactFolder)
                     End If
                 End If
@@ -241,6 +249,7 @@ Friend Class QaForm
             RefreshModels.Enabled = True
             HistoryInput.Enabled = History.Count > 0
             UrlInput.Enabled = True
+            ProfilesTab.Enabled = True
             RunButton.Enabled = True
         End Try
     End Sub
@@ -286,7 +295,10 @@ Friend Class QaForm
 
     Private Sub RestoreInputs(sender As Object, args As EventArgs)
         If HistoryInput.SelectedIndex < 0 Then Return
-        Dim entry = History(HistoryInput.SelectedIndex)
+        ApplyInputs(History(HistoryInput.SelectedIndex))
+    End Sub
+
+    Private Sub ApplyInputs(entry As RunInputs)
         UrlInput.Text = entry.Url
         CharterInput.Text = entry.Charter
         YouTube.Checked = entry.YouTube
@@ -304,7 +316,7 @@ Friend Class QaForm
         PlayerStatus.Visible = True
     End Sub
 
-    Private Async Function LoadRecording(folder As String) As Task
+    Private Async Function LoadRecording(folder As String, Optional showTab As Boolean = True) As Task
         Dim videoFolder = Path.Combine(folder, "video")
         If Not Directory.Exists(videoFolder) Then Return
         Dim video = Directory.EnumerateFiles(videoFolder, "*.webm").OrderBy(Function(videoPath) File.GetCreationTimeUtc(videoPath)).FirstOrDefault()
@@ -325,7 +337,7 @@ Friend Class QaForm
                 "style='width:100vw;height:100vh' src='" & source & "'></video></body></html>")
             PlayerStatus.Visible = False
             Player.Visible = True
-            If EvidenceTabs.SelectedTab IsNot AssetsTab Then EvidenceTabs.SelectedTab = RecordingTab
+            If showTab AndAlso EvidenceTabs.SelectedTab IsNot AssetsTab Then EvidenceTabs.SelectedTab = RecordingTab
         Catch ex As Exception
             PlayerStatus.Text = "Could not load the embedded player. Use Open artifacts to play the WebM file."
             Output.AppendText(ex.Message & Environment.NewLine)
