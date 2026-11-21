@@ -55,19 +55,31 @@ Partial Friend Class QaForm
                 name.Text = selected
                 kind.SelectedItem = saved(selected).Kind
                 value.Clear()
-                message.Text = "Enter a new value to replace {{" & selected & "}}."
+                message.Text = "Leave Value blank to keep it, or enter a replacement."
             End Sub
             Dim buttons As New FlowLayoutPanel With {.AutoSize = True}
             buttons.Controls.Add(ProfileButton("Save variable", Sub(buttonSender, buttonArgs)
                 Dim key = name.Text.Trim().ToLowerInvariant()
-                If Not VariableName.IsMatch(key) OrElse value.Text.Length = 0 Then
-                    message.Text = "Enter a name such as test_email and a value."
+                If Not VariableName.IsMatch(key) Then
+                    message.Text = "Enter a name such as mx1_phone."
+                    Return
+                End If
+                Dim previous As SavedVariable = Nothing
+                saved.TryGetValue(key, previous)
+                If previous Is Nothing AndAlso value.Text.Length = 0 Then
+                    message.Text = "Enter a value for the new variable."
                     Return
                 End If
                 Try
-                    Dim encoded = ProtectedData.Protect(Encoding.UTF8.GetBytes(value.Text),
-                                                        Encoding.UTF8.GetBytes(origin), DataProtectionScope.CurrentUser)
-                    saved(key) = New SavedVariable With {.Kind = CStr(kind.SelectedItem), .EncryptedValue = Convert.ToBase64String(encoded)}
+                    Dim encrypted As String
+                    If value.Text.Length = 0 Then
+                        encrypted = previous.EncryptedValue
+                    Else
+                        Dim encoded = ProtectedData.Protect(Encoding.UTF8.GetBytes(value.Text),
+                                                            Encoding.UTF8.GetBytes(origin), DataProtectionScope.CurrentUser)
+                        encrypted = Convert.ToBase64String(encoded)
+                    End If
+                    saved(key) = New SavedVariable With {.Kind = CStr(kind.SelectedItem), .EncryptedValue = encrypted}
                     WriteProfiles()
                     value.Clear()
                     refresh()

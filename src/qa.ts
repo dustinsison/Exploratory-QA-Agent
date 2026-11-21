@@ -423,7 +423,11 @@ try {
       '', 'Media events do not establish visual appearance or sustained playback. Review the recording for visual confirmation.',
     ] : []),
     ...(navigationIssues.length ? ['', '## Navigation diagnostics', '', ...navigationIssues.map(issue => `- ${issue}`)] : []),
-    ...(credentialDiagnostics.size ? ['', '## Credential field diagnostics', '', ...[...credentialDiagnostics].map(info => `- ${info}`)] : []),
+    ...(credentialDiagnostics.size ? [
+      '', '## Credential field diagnostics', '',
+      `Saved variables available to this run: ${[...variables].map(([name, entry]) => `\`${name}\` (${entry.kind})`).join(', ')}.`,
+      '', ...[...credentialDiagnostics].map(info => `- ${info}`),
+    ] : []),
     '', '## Browser evidence', '', '[Final screenshot](final.png)',
     ...(videoLink ? ['', `[Watch the test recording](${videoLink})`] : []), '',
   ].join('\n'));
