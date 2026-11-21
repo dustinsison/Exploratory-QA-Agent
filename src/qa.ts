@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
-import { basename, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 
@@ -27,7 +27,7 @@ try {
   context = await browser.newContext({
     serviceWorkers: 'block',
     acceptDownloads: false,
-    recordVideo: { dir: join('recordings', basename(output)) },
+    recordVideo: { dir: join(output, 'video') },
   });
   await context.route('**/*', route => {
     if (new URL(route.request().url()).origin !== start.origin) return route.abort();
