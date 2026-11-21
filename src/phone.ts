@@ -47,3 +47,21 @@ export async function fillSavedPhone(page: Page, target: Locator, value: string,
   await target.fill(text);
   return note;
 }
+
+export const phoneNextButtonName = /^(continue|next)$/i;
+
+export async function waitForPhoneNextButton(page: Page, url: string, signal: AbortSignal): Promise<'ready' | 'disabled' | undefined> {
+  const next = page.getByRole('button', { name: phoneNextButtonName });
+  const deadline = Date.now() + 8_000;
+  let state: 'disabled' | undefined;
+  do {
+    if (signal.aborted || page.url() !== url) return;
+    state = undefined;
+    if (await next.count() === 1 && await next.isVisible()) {
+      if (await next.isEnabled({ timeout: 250 }).catch(() => false)) return 'ready';
+      state = 'disabled';
+    }
+    await new Promise(resolve => setTimeout(resolve, 150));
+  } while (Date.now() < deadline);
+  return state;
+}
