@@ -6,9 +6,10 @@ interface BrowserAction {
   role: Parameters<Page['getByRole']>[0];
   target: Locator;
   option?: string;
+  fieldType?: string;
 }
 
-export async function availableActions(page: Page, snapshot: string): Promise<BrowserAction[]> {
+export async function availableActions(page: Page, snapshot: string, includePasswords = false): Promise<BrowserAction[]> {
   const controls = /^\s*- (button|link|textbox|searchbox|combobox|checkbox|radio|tab)(?: ("(?:[^"\\]|\\.)*"))?(?=\s|:|$)([^\n]*)/gm;
   const actions: BrowserAction[] = [];
   const seen = new Set<string>();
@@ -34,11 +35,21 @@ export async function availableActions(page: Page, snapshot: string): Promise<Br
         actions.push({ kind: 'select', name, role, target, option });
       }
     } else if (role === 'textbox' || role === 'searchbox') {
-      if (await target.isEditable() && await target.getAttribute('type', { timeout: 1_000 }) !== 'password') {
-        actions.push({ kind: 'fill', name, role, target });
+      const fieldType = await target.getAttribute('type', { timeout: 1_000 }) ?? 'text';
+      if (fieldType !== 'password' && await target.isEditable()) {
+        actions.push({ kind: 'fill', name, role, target, fieldType });
       }
     } else {
       actions.push({ kind: 'click', name, role, target });
+    }
+  }
+  if (includePasswords) {
+    for (const target of await page.locator('input[type="password"]:visible').all()) {
+      if (!await target.isEditable()) continue;
+      const name = await target.evaluate((element: HTMLInputElement) =>
+        element.getAttribute('aria-label') || [...(element.labels ?? [])].map(label => label.textContent).join(' ').trim()
+        || element.placeholder || 'Password', undefined, { timeout: 1_000 });
+      actions.push({ kind: 'fill', name, role: 'textbox', target, fieldType: 'password' });
     }
   }
   return actions;

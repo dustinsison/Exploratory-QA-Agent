@@ -22,6 +22,7 @@ Partial Friend Class QaForm
         profileRow.Controls.Add(ProfilePicker)
         profileRow.Controls.Add(ProfileButton("Save current site / charter", AddressOf SaveCurrentProfile))
         profileRow.Controls.Add(ProfileButton("Asset permissions", AddressOf OpenProfileAssets))
+        profileRow.Controls.Add(ProfileButton("Variables…", AddressOf OpenProfileVariables))
         AddFullRow(layout, profileRow, SizeType.AutoSize)
 
         Dim titles = layout.RowCount
@@ -220,6 +221,7 @@ End Class
 Friend Class WebsiteProfile
     Public Property Url As String = ""
     Public Property AllowAllAssetOrigins As Boolean
+    Public Property Variables As New Dictionary(Of String, SavedVariable)(StringComparer.OrdinalIgnoreCase)
     Public Property Charters As New List(Of RunInputs)
     Public Property Runs As New List(Of ProfileRun)
 End Class

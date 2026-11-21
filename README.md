@@ -24,6 +24,8 @@ Open **Website profiles** to save the current site and charter or select an exis
 
 Existing recent inputs and asset origins seed the profile list on first launch. To attach an older run, select its website profile and use **Import report…** to select its `report.md`. Reports stay in their original artifact folders. Imported recordings are available in the player when the run has a WebM in its `video` subfolder.
 
+For an authorized sign-in test, select the website profile and open **Variables…**. Create variables with a name, a type (email, password, phone, or text), and a value. For example, use the charter `Sign in with {{test_email}} and {{test_password}}, then verify the account page loads.` The runner gives Ollama the names and compatible fields. Playwright resolves the saved values locally and fills them on the profile's origin. Profile variables require HTTPS or a loopback test site. Windows encrypts the stored values for the current user account. Use dedicated test accounts and synthetic data. The browser recording and screenshots can show visible values or signed-in page content.
+
 Click **Stop run** to end a test early. The agent cancels its Ollama wait or finishes the current browser action, then saves the partial report and recording. Click **Open artifacts** after the run to see its report, screenshot, and video. Both the app and the command line use folders such as `artifacts/run-dustinsison.com-2026-11-21-17-30-00-125/`. The name uses the starting hostname and local date and time, including milliseconds.
 
 ## Run the storefront demo

@@ -218,6 +218,7 @@ Partial Friend Class QaForm
                 startInfo.ArgumentList.Add(origin)
             Next
 
+            AddProfileVariables(startInfo, siteOrigin, inputs.Charter)
             Using runner As New Process With {.StartInfo = startInfo}
                 AddHandler runner.ErrorDataReceived, AddressOf ShowRunnerOutput
                 runner.Start()
