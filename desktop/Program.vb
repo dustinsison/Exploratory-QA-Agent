@@ -32,7 +32,7 @@ Partial Friend Class QaForm
     Private ReadOnly AssetsTab As New TabPage("Asset origins")
     Private ReadOnly AssetList As New CheckedListBox With {.Dock = DockStyle.Fill, .CheckOnClick = True}
     Private ReadOnly AllowAllAssets As New CheckBox With {
-        .Text = "Allow all asset origins", .Dock = DockStyle.Top, .Height = 28
+        .Text = "Allow all asset origins", .AutoSize = True
     }
     Private ReadOnly AssetStatus As New Label With {.Dock = DockStyle.Top, .Height = 44}
     Private ReviewingAssets As Boolean
@@ -75,6 +75,7 @@ Partial Friend Class QaForm
         modelRow.Controls.Add(RefreshModels)
         AddField(layout, "Ollama model", modelRow)
         AddField(layout, "Additional asset origins", AssetInput)
+        AddField(layout, "", AllowAllAssets)
         Dim options As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False}
         options.Controls.Add(YouTube)
         options.Controls.Add(ShowBrowser)
@@ -94,7 +95,6 @@ Partial Friend Class QaForm
         EvidenceTabs.TabPages.Add(logTab)
         EvidenceTabs.TabPages.Add(RecordingTab)
         AssetsTab.Controls.Add(AssetList)
-        AssetsTab.Controls.Add(AllowAllAssets)
         AssetsTab.Controls.Add(AssetStatus)
         EvidenceTabs.TabPages.Add(AssetsTab)
         AddFullRow(layout, EvidenceTabs, SizeType.Percent)
