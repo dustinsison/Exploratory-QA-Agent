@@ -208,6 +208,14 @@ try {
         credentialDiagnostics.add(`${redact(displayUrl(new URL(page.url())))} — ${fields.length ? fields.join('; ') : 'no editable fields detected'}`);
       }
       const phoneForm = enteredCredentialFlow && available.some(({ fieldType, name }) => fieldType && acceptsVariable('phone', fieldType, name));
+      if (phoneForm && !filledProfileVariable && !credentialChoices.length
+        && [...variables.values()].every(({ kind }) => kind === 'otp' || kind === 'pin')) {
+        summary = 'Incomplete run. The phone number field was found, but this run only has saved OTP or PIN variables. Add a phone variable to the credential group used in the charter.';
+        steps.push('Stopped on the phone form because no saved phone number was available.');
+        console.error(summary);
+        process.exitCode = 1;
+        break;
+      }
       const candidates: Awaited<ReturnType<typeof availableActions>> = prioritizeSearch ? searchActions
         : credentialChoices.length ? credentialChoices
           : phoneForm ? available.filter(action => action.kind !== 'select' || !phoneCountryLabel.test(action.name)) : available;
