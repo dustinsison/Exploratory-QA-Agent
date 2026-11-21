@@ -19,7 +19,7 @@ Leave the storefront running. In a second terminal in the same folder, start the
 npm run qa -- --url http://127.0.0.1:3000 --charter "Search for hiking boots. Select size 12. Verify the empty state, then clear filters and check that matching products return."
 ```
 
-The storefront contains a seeded defect. **Clear filters** leaves size 12 selected, so the two matching boots stay hidden. Open the report under `artifacts/` to review the steps and screenshot or play the WebM recording. The video is saved locally when the browser closes and includes time spent waiting for Ollama.
+The storefront contains a seeded defect. **Clear filters** leaves size 12 selected, so the two matching boots stay hidden. Open the report under `artifacts/` to review the steps and screenshot or play the WebM recording. Each WebM is saved under `recordings/run-*/` in the repository when the browser closes. The recording folder is ignored by Git, and its run ID matches the report folder under `artifacts/`. The video includes time spent waiting for Ollama.
 
 The runner uses Ollama at `127.0.0.1:11434`. To try a smaller model on your PC, run `ollama pull qwen2.5:3b` and add `--model qwen2.5:3b` to the QA command. Model choice can affect which checks the agent performs and which findings it reports.
 
