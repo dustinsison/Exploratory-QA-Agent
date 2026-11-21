@@ -9,7 +9,7 @@ interface BrowserAction {
   fieldType?: string;
 }
 
-export async function availableActions(page: Page, snapshot: string, includePasswords = false): Promise<BrowserAction[]> {
+export async function availableActions(page: Page, snapshot: string, includePasswords = false, includePhones = false): Promise<BrowserAction[]> {
   const controls = /^\s*- (button|link|textbox|searchbox|combobox|checkbox|radio|tab|spinbutton)(?: ("(?:[^"\\]|\\.)*"))?(?=\s|:|$)([^\n]*)/gm;
   const actions: BrowserAction[] = [];
   const seen = new Set<string>();
@@ -42,6 +42,16 @@ export async function availableActions(page: Page, snapshot: string, includePass
       }
     } else {
       actions.push({ kind: 'click', name, role, target });
+    }
+  }
+  if (includePhones && !actions.some(action => action.fieldType === 'tel')) {
+    const phones = page.locator('input:is([type="tel"], [inputmode="tel"], [autocomplete~="tel"], [autocomplete~="tel-national"]):visible');
+    for (const target of await phones.all()) {
+      if (!await target.isEditable() || await fieldInputType(target) !== 'tel') continue;
+      const name = await target.evaluate((element: HTMLInputElement) =>
+        element.getAttribute('aria-label') || [...(element.labels ?? [])].map(label => label.textContent).join(' ').trim()
+        || element.placeholder || 'Phone number', undefined, { timeout: 1_000 });
+      actions.push({ kind: 'fill', name, role: 'textbox', target, fieldType: 'tel' });
     }
   }
   if (includePasswords) {
