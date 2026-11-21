@@ -31,6 +31,7 @@ const assetOrigins = new Set(values['asset-origin']?.map(value => {
   }
   return asset.origin;
 }));
+const blockedAssetOrigins = new Set<string>();
 const assetTypes = new Set(['stylesheet', 'script', 'image', 'font', 'media']);
 const model = values.model?.trim() || 'qwen2.5:7b';
 const browser = await chromium.launch({ headless: !values.headed, slowMo: storefront ? 500 : 0 });
@@ -78,10 +79,15 @@ try {
     const request = route.request();
     const { origin } = new URL(request.url());
     if (origin === start.origin) return route.continue();
-    if (assetOrigins.has(origin) && request.method() === 'GET' && assetTypes.has(request.resourceType())) {
+    const isAsset = request.method() === 'GET' && assetTypes.has(request.resourceType());
+    if (assetOrigins.has(origin) && isAsset) {
       return route.continue();
     }
     if (values['allow-youtube-embeds'] && isYouTubeEmbedRequest(request, start.origin)) return route.continue();
+    if (values['desktop-control'] && isAsset && /^https?:\/\//.test(origin) && !blockedAssetOrigins.has(origin)) {
+      blockedAssetOrigins.add(origin);
+      console.error(`QA_BLOCKED_ASSET ${JSON.stringify([start.origin, origin])}`);
+    }
     return route.abort();
   });
   await context.exposeBinding('recordQaMediaEvent', ({ frame }, event: unknown) => {

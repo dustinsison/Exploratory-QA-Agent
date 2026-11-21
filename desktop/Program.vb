@@ -30,6 +30,12 @@ Friend Class QaForm
     Private ReadOnly History As New List(Of RunInputs)
     Private Shared ReadOnly HistoryPath As String = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ExploratoryQaAgent", "history.json")
+    Private Shared ReadOnly AssetSettingsPath As String = Path.Combine(Path.GetDirectoryName(HistoryPath), "asset-origins.json")
+    Private ReadOnly AssetSettings As New Dictionary(Of String, Dictionary(Of String, Boolean))(StringComparer.OrdinalIgnoreCase)
+    Private ReadOnly AssetsTab As New TabPage("Asset origins")
+    Private ReadOnly AssetList As New CheckedListBox With {.Dock = DockStyle.Fill, .CheckOnClick = True}
+    Private ReadOnly AssetStatus As New Label With {.Dock = DockStyle.Top, .Height = 44}
+    Private ReviewingAssets As Boolean
     Private ReadOnly EvidenceTabs As New TabControl With {.Dock = DockStyle.Fill}
     Private ReadOnly RecordingTab As New TabPage("Recording")
     Private ReadOnly Player As New WebView2 With {.Dock = DockStyle.Fill, .Visible = False}
@@ -67,7 +73,7 @@ Friend Class QaForm
         modelRow.Controls.Add(ModelInput)
         modelRow.Controls.Add(RefreshModels)
         AddField(layout, "Ollama model", modelRow)
-        AddField(layout, "Allowed asset origins", AssetInput)
+        AddField(layout, "Additional asset origins", AssetInput)
         Dim options As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False}
         options.Controls.Add(YouTube)
         options.Controls.Add(ShowBrowser)
@@ -85,8 +91,15 @@ Friend Class QaForm
         RecordingTab.Controls.Add(PlayerStatus)
         EvidenceTabs.TabPages.Add(logTab)
         EvidenceTabs.TabPages.Add(RecordingTab)
+        AssetsTab.Controls.Add(AssetList)
+        AssetsTab.Controls.Add(AssetStatus)
+        EvidenceTabs.TabPages.Add(AssetsTab)
         AddFullRow(layout, EvidenceTabs, SizeType.Percent)
         ReadHistory()
+        ReadAssetSettings()
+        RefreshAssetList()
+        AddHandler UrlInput.TextChanged, Sub(sender, args) RefreshAssetList()
+        AddHandler AssetList.ItemCheck, AddressOf ChangeAssetSetting
         AddHandler HistoryInput.SelectionChangeCommitted, AddressOf RestoreInputs
 
         AddHandler Shown, AddressOf LoadModels
@@ -165,6 +178,8 @@ Friend Class QaForm
         RefreshModels.Enabled = False
         OpenButton.Enabled = False
         HistoryInput.Enabled = False
+        UrlInput.Enabled = False
+        AssetsTab.Text = "Asset origins"
         Output.Clear()
         EvidenceTabs.SelectedIndex = 0
         ResetRecording()
@@ -186,7 +201,7 @@ Friend Class QaForm
             Next
             If inputs.YouTube Then startInfo.ArgumentList.Add("--allow-youtube-embeds")
             If inputs.ShowBrowser Then startInfo.ArgumentList.Add("--headed")
-            For Each origin In inputs.AssetOrigins.Split(","c, StringSplitOptions.RemoveEmptyEntries Or StringSplitOptions.TrimEntries)
+            For Each origin In GetAllowedAssets(address.GetLeftPart(UriPartial.Authority), inputs.AssetOrigins)
                 startInfo.ArgumentList.Add("--asset-origin")
                 startInfo.ArgumentList.Add(origin)
             Next
@@ -225,6 +240,7 @@ Friend Class QaForm
             Running = False
             RefreshModels.Enabled = True
             HistoryInput.Enabled = History.Count > 0
+            UrlInput.Enabled = True
             RunButton.Enabled = True
         End Try
     End Sub
@@ -309,7 +325,7 @@ Friend Class QaForm
                 "style='width:100vw;height:100vh' src='" & source & "'></video></body></html>")
             PlayerStatus.Visible = False
             Player.Visible = True
-            EvidenceTabs.SelectedTab = RecordingTab
+            If EvidenceTabs.SelectedTab IsNot AssetsTab Then EvidenceTabs.SelectedTab = RecordingTab
         Catch ex As Exception
             PlayerStatus.Text = "Could not load the embedded player. Use Open artifacts to play the WebM file."
             Output.AppendText(ex.Message & Environment.NewLine)
@@ -327,10 +343,144 @@ Friend Class QaForm
         End Try
     End Sub
 
+    Private Function CurrentSite() As String
+        Dim address As Uri = Nothing
+        If Uri.TryCreate(UrlInput.Text.Trim(), UriKind.Absolute, address) AndAlso
+            (address.Scheme = Uri.UriSchemeHttp OrElse address.Scheme = Uri.UriSchemeHttps) AndAlso address.UserInfo = "" Then
+            Return address.GetLeftPart(UriPartial.Authority)
+        End If
+        Return ""
+    End Function
+
+    Private Sub ReadAssetSettings()
+        Try
+            If Not File.Exists(AssetSettingsPath) Then Return
+            Dim saved = JsonSerializer.Deserialize(Of Dictionary(Of String, Dictionary(Of String, Boolean)))(
+                File.ReadAllText(AssetSettingsPath))
+            If saved Is Nothing Then Return
+            For Each siteEntry In saved
+                AssetSettings(siteEntry.Key) = New Dictionary(Of String, Boolean)(siteEntry.Value, StringComparer.OrdinalIgnoreCase)
+            Next
+        Catch ex As Exception
+            Output.AppendText("Could not read asset origin settings: " & ex.Message & Environment.NewLine)
+        End Try
+    End Sub
+
+    Private Sub SaveAssetSettings()
+        Try
+            Directory.CreateDirectory(Path.GetDirectoryName(AssetSettingsPath))
+            Dim pending = AssetSettingsPath & ".tmp"
+            File.WriteAllText(pending, JsonSerializer.Serialize(AssetSettings))
+            File.Move(pending, AssetSettingsPath, overwrite:=True)
+        Catch ex As Exception
+            Output.AppendText("Could not save asset origin settings: " & ex.Message & Environment.NewLine)
+        End Try
+    End Sub
+
+    Private Function GetAllowedAssets(site As String, additional As String) As IEnumerable(Of String)
+        Dim origins As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim saved As Dictionary(Of String, Boolean) = Nothing
+        AssetSettings.TryGetValue(site, saved)
+        Dim changed As Boolean
+        For Each entry In additional.Split(","c, StringSplitOptions.RemoveEmptyEntries Or StringSplitOptions.TrimEntries)
+            Dim origin = ParseAssetOrigin(entry)
+            If origin Is Nothing Then
+                Throw New ArgumentException("Enter asset origins without paths or credentials, for example https://c0.wp.com.")
+            End If
+            If saved Is Nothing Then
+                saved = New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+                AssetSettings(site) = saved
+            End If
+            changed = saved.TryAdd(origin, True) OrElse changed
+        Next
+        If changed Then
+            SaveAssetSettings()
+            RefreshAssetList()
+        End If
+        If saved IsNot Nothing Then
+            For Each origin In saved
+                If origin.Value Then origins.Add(origin.Key)
+            Next
+        End If
+        Return origins
+    End Function
+
+    Private Shared Function ParseAssetOrigin(value As String) As String
+        Dim address As Uri = Nothing
+        If Not Uri.TryCreate(value, UriKind.Absolute, address) OrElse
+            (address.Scheme <> Uri.UriSchemeHttp AndAlso address.Scheme <> Uri.UriSchemeHttps) OrElse
+            address.AbsolutePath <> "/" OrElse address.UserInfo <> "" OrElse address.Query <> "" OrElse address.Fragment <> "" Then
+            Return Nothing
+        End If
+        Return address.GetLeftPart(UriPartial.Authority)
+    End Function
+
+    Private Sub RefreshAssetList()
+        Dim site = CurrentSite()
+        ReviewingAssets = True
+        Try
+            AssetList.Items.Clear()
+            Dim saved As Dictionary(Of String, Boolean) = Nothing
+            If site <> "" AndAlso AssetSettings.TryGetValue(site, saved) Then
+                For Each origin In saved.OrderBy(Function(entry) entry.Key)
+                    AssetList.Items.Add(origin.Key, origin.Value)
+                Next
+            End If
+        Finally
+            ReviewingAssets = False
+        End Try
+        If site = "" Then
+            AssetStatus.Text = "Enter a site URL to review its asset origins."
+        Else
+            AssetStatus.Text = site & Environment.NewLine & "Check trusted origins to allow them on the next run. Unchecked origins stay blocked."
+        End If
+    End Sub
+
+    Private Sub ChangeAssetSetting(sender As Object, args As ItemCheckEventArgs)
+        If ReviewingAssets Then Return
+        Dim origin = CStr(AssetList.Items(args.Index))
+        AssetSettings(CurrentSite())(origin) = args.NewValue = CheckState.Checked
+        SaveAssetSettings()
+    End Sub
+
+    Private Sub ReviewBlockedAsset(payload As String)
+        Dim details = JsonSerializer.Deserialize(Of String())(payload)
+        If details Is Nothing OrElse details.Length <> 2 Then Return
+        Dim site = details(0)
+        Dim origin = ParseAssetOrigin(details(1))
+        If Not String.Equals(site, CurrentSite(), StringComparison.OrdinalIgnoreCase) OrElse origin Is Nothing Then Return
+
+        Dim saved As Dictionary(Of String, Boolean) = Nothing
+        If Not AssetSettings.TryGetValue(site, saved) Then
+            saved = New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+            AssetSettings(site) = saved
+        End If
+        If saved.ContainsKey(origin) Then Return
+        saved.Add(origin, False)
+        SaveAssetSettings()
+        RefreshAssetList()
+        If AssetsTab.Text <> "Asset origins (new)" Then
+            AssetsTab.Text = "Asset origins (new)"
+            EvidenceTabs.SelectedTab = AssetsTab
+        End If
+        Output.AppendText("Blocked asset origin: " & origin & ". Review it in Asset origins." & Environment.NewLine)
+    End Sub
+
     Private Sub ShowRunnerOutput(sender As Object, args As DataReceivedEventArgs)
         Dim line = args.Data
         If line IsNot Nothing Then
-            BeginInvoke(Sub() Output.AppendText(line & Environment.NewLine))
+            BeginInvoke(Sub()
+                            Const prefix As String = "QA_BLOCKED_ASSET "
+                            If line.StartsWith(prefix, StringComparison.Ordinal) Then
+                                Try
+                                    ReviewBlockedAsset(line.Substring(prefix.Length))
+                                Catch ex As JsonException
+                                    Output.AppendText(line & Environment.NewLine)
+                                End Try
+                            Else
+                                Output.AppendText(line & Environment.NewLine)
+                            End If
+                        End Sub)
         End If
     End Sub
 

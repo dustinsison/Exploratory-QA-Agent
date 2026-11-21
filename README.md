@@ -16,7 +16,9 @@ Start Ollama before opening the app. **Show live browser** opens a separate Chro
 
 After a run, the **Recording** tab plays the saved WebM using the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). **Recent runs** restores the URL, charter, model, and options from up to 25 recent configurations stored locally under `%LOCALAPPDATA%\ExploratoryQaAgent`.
 
-The model picker lists installed models. Use **Refresh models** after downloading a model. Enter a URL and charter, choose the model, and click **Run test**. For dustinsison.com, enter `https://c0.wp.com` under **Allowed asset origins** and enable **Allow YouTube embeds** if the charter needs the background player. Enter multiple asset origins separated by commas.
+The model picker lists installed models. Use **Refresh models** after downloading a model. Enter a URL and charter, choose the model, and click **Run test**. For dustinsison.com, enter `https://c0.wp.com` under **Additional asset origins** and enable **Allow YouTube embeds** if the charter needs the background player. Enter multiple asset origins separated by commas.
+
+When the runner blocks a new third-party script, stylesheet, image, font, or media origin, the app opens **Asset origins** for review. Check any trusted origins you want to allow, then rerun the test. The app saves the choices per site and applies them to the next run. Enter the site's URL and reopen the tab at any time to change them. Origins entered under **Additional asset origins** are added to the same list so they can be toggled later.
 
 Click **Stop run** to end a test early. The agent cancels its Ollama wait or finishes the current browser action, then saves the partial report and recording. Click **Open artifacts** after the run to see its report, screenshot, and video. Both the app and the command line use folders such as `artifacts/run-dustinsison.com-2026-11-21-17-30-00-125/`. The name uses the starting hostname and local date and time, including milliseconds.
 
