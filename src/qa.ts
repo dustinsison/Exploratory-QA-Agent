@@ -6,7 +6,7 @@ import { availableActions } from './actions.js';
 import { isYouTubeEmbedRequest } from './youtube.js';
 
 const { values } = parseArgs({
-  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true }, 'allow-youtube-embeds': { type: 'boolean' }, 'desktop-control': { type: 'boolean' } },
+  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true }, 'allow-youtube-embeds': { type: 'boolean' }, 'desktop-control': { type: 'boolean' }, headed: { type: 'boolean' } },
 });
 const storefront = values.storefront === true;
 const charter = storefront
@@ -33,7 +33,7 @@ const assetOrigins = new Set(values['asset-origin']?.map(value => {
 }));
 const assetTypes = new Set(['stylesheet', 'script', 'image', 'font', 'media']);
 const model = values.model?.trim() || 'qwen2.5:7b';
-const browser = await chromium.launch({ slowMo: storefront ? 500 : 0 });
+const browser = await chromium.launch({ headless: !values.headed, slowMo: storefront ? 500 : 0 });
 let context: Awaited<ReturnType<typeof browser.newContext>> | undefined;
 const steps: string[] = [];
 const mediaObservations = new Set<string>();

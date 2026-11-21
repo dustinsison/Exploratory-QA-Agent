@@ -4,6 +4,8 @@ Imports System.Net.Http
 Imports System.Text
 Imports System.Text.Json
 Imports System.Windows.Forms
+Imports Microsoft.Web.WebView2.Core
+Imports Microsoft.Web.WebView2.WinForms
 
 Module Program
     <STAThread>
@@ -23,6 +25,15 @@ Friend Class QaForm
     Private ReadOnly ModelInput As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList}
     Private ReadOnly RefreshModels As New Button With {.Text = "Refresh models", .AutoSize = True}
     Private ReadOnly YouTube As New CheckBox With {.Text = "Allow YouTube embeds", .AutoSize = True}
+    Private ReadOnly ShowBrowser As New CheckBox With {.Text = "Show live browser", .AutoSize = True, .Checked = True}
+    Private ReadOnly HistoryInput As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList}
+    Private ReadOnly History As New List(Of RunInputs)
+    Private Shared ReadOnly HistoryPath As String = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ExploratoryQaAgent", "history.json")
+    Private ReadOnly EvidenceTabs As New TabControl With {.Dock = DockStyle.Fill}
+    Private ReadOnly RecordingTab As New TabPage("Recording")
+    Private ReadOnly Player As New WebView2 With {.Dock = DockStyle.Fill, .Visible = False}
+    Private ReadOnly PlayerStatus As New Label With {.Text = "No recording available.", .Dock = DockStyle.Fill}
     Private ReadOnly AssetInput As New TextBox With {.PlaceholderText = "https://c0.wp.com"}
     Private ReadOnly RunButton As New Button With {.Text = "Run test", .AutoSize = True, .Enabled = False}
     Private ReadOnly StopButton As New Button With {.Text = "Stop run", .AutoSize = True, .Enabled = False}
@@ -37,8 +48,8 @@ Friend Class QaForm
 
     Public Sub New()
         Text = "Exploratory QA Agent"
-        ClientSize = New Drawing.Size(720, 540)
-        MinimumSize = New Drawing.Size(580, 480)
+        ClientSize = New Drawing.Size(850, 700)
+        MinimumSize = New Drawing.Size(620, 560)
         StartPosition = FormStartPosition.CenterScreen
 
         Dim layout As New TableLayoutPanel With {
@@ -47,6 +58,7 @@ Friend Class QaForm
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         Controls.Add(layout)
+        AddField(layout, "Recent runs", HistoryInput)
         AddField(layout, "URL", UrlInput)
         CharterInput.Height = 95
         AddField(layout, "Charter", CharterInput)
@@ -56,7 +68,10 @@ Friend Class QaForm
         modelRow.Controls.Add(RefreshModels)
         AddField(layout, "Ollama model", modelRow)
         AddField(layout, "Allowed asset origins", AssetInput)
-        AddField(layout, "", YouTube)
+        Dim options As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False}
+        options.Controls.Add(YouTube)
+        options.Controls.Add(ShowBrowser)
+        AddField(layout, "", options)
 
         Dim buttons As New FlowLayoutPanel With {.AutoSize = True}
         buttons.Controls.Add(RunButton)
@@ -64,10 +79,21 @@ Friend Class QaForm
         buttons.Controls.Add(OpenButton)
         buttons.Controls.Add(StatusText)
         AddFullRow(layout, buttons, SizeType.AutoSize)
-        AddFullRow(layout, Output, SizeType.Percent)
+        Dim logTab As New TabPage("Activity")
+        logTab.Controls.Add(Output)
+        RecordingTab.Controls.Add(Player)
+        RecordingTab.Controls.Add(PlayerStatus)
+        EvidenceTabs.TabPages.Add(logTab)
+        EvidenceTabs.TabPages.Add(RecordingTab)
+        AddFullRow(layout, EvidenceTabs, SizeType.Percent)
+        ReadHistory()
+        AddHandler HistoryInput.SelectionChangeCommitted, AddressOf RestoreInputs
 
         AddHandler Shown, AddressOf LoadModels
         AddHandler RefreshModels.Click, AddressOf LoadModels
+        AddHandler ModelInput.SelectionChangeCommitted, Sub(sender, args)
+            RunButton.Enabled = Not Running AndAlso RefreshModels.Enabled AndAlso ModelInput.SelectedIndex >= 0
+        End Sub
         AddHandler RunButton.Click, AddressOf RunTest
         AddHandler StopButton.Click, AddressOf StopRun
         AddHandler OpenButton.Click, AddressOf OpenArtifacts
@@ -138,8 +164,15 @@ Friend Class QaForm
         RunButton.Enabled = False
         RefreshModels.Enabled = False
         OpenButton.Enabled = False
+        HistoryInput.Enabled = False
         Output.Clear()
+        EvidenceTabs.SelectedIndex = 0
+        ResetRecording()
         StatusText.Text = "Running…"
+        Dim inputs As New RunInputs With {
+            .Url = address.AbsoluteUri, .Charter = CharterInput.Text.Trim(), .Model = CStr(ModelInput.SelectedItem),
+            .YouTube = YouTube.Checked, .ShowBrowser = ShowBrowser.Checked, .AssetOrigins = AssetInput.Text.Trim()
+        }
         Try
             Dim repo = FindRepository()
             Dim startInfo As New ProcessStartInfo("node") With {
@@ -148,11 +181,12 @@ Friend Class QaForm
                 .StandardOutputEncoding = Encoding.UTF8, .StandardErrorEncoding = Encoding.UTF8
             }
             For Each argument In {"--import", "tsx", "src/qa.ts", "--url", address.AbsoluteUri,
-                                  "--charter", CharterInput.Text.Trim(), "--model", CStr(ModelInput.SelectedItem), "--desktop-control"}
+                                  "--charter", inputs.Charter, "--model", inputs.Model, "--desktop-control"}
                 startInfo.ArgumentList.Add(argument)
             Next
-            If YouTube.Checked Then startInfo.ArgumentList.Add("--allow-youtube-embeds")
-            For Each origin In AssetInput.Text.Split(","c, StringSplitOptions.RemoveEmptyEntries Or StringSplitOptions.TrimEntries)
+            If inputs.YouTube Then startInfo.ArgumentList.Add("--allow-youtube-embeds")
+            If inputs.ShowBrowser Then startInfo.ArgumentList.Add("--headed")
+            For Each origin In inputs.AssetOrigins.Split(","c, StringSplitOptions.RemoveEmptyEntries Or StringSplitOptions.TrimEntries)
                 startInfo.ArgumentList.Add("--asset-origin")
                 startInfo.ArgumentList.Add(origin)
             Next
@@ -163,6 +197,7 @@ Friend Class QaForm
                 ActiveRunner = runner
                 StopButton.Enabled = True
                 runner.BeginErrorReadLine()
+                SaveInputs(inputs)
                 Dim reportTask = runner.StandardOutput.ReadToEndAsync()
                 Await runner.WaitForExitAsync()
                 Dim report = (Await reportTask).Trim()
@@ -172,6 +207,7 @@ Friend Class QaForm
                     If File.Exists(reportPath) Then
                         ArtifactFolder = Path.GetDirectoryName(reportPath)
                         OpenButton.Enabled = True
+                        Await LoadRecording(ArtifactFolder)
                     End If
                 End If
                 Select Case runner.ExitCode
@@ -188,9 +224,97 @@ Friend Class QaForm
             StopButton.Enabled = False
             Running = False
             RefreshModels.Enabled = True
+            HistoryInput.Enabled = History.Count > 0
             RunButton.Enabled = True
         End Try
     End Sub
+
+    Private Sub ReadHistory()
+        Try
+            If File.Exists(HistoryPath) Then
+                Dim saved = JsonSerializer.Deserialize(Of List(Of RunInputs))(File.ReadAllText(HistoryPath))
+                If saved IsNot Nothing Then History.AddRange(saved)
+            End If
+        Catch ex As Exception
+            Output.AppendText("Could not read run history: " & ex.Message & Environment.NewLine)
+        End Try
+        UpdateHistory()
+    End Sub
+
+    Private Sub UpdateHistory()
+        HistoryInput.Items.Clear()
+        For Each entry In History
+            Dim firstLine = entry.Charter.Split(ChrW(10))(0).Trim()
+            If firstLine.Length > 75 Then firstLine = firstLine.Substring(0, 75) & "…"
+            HistoryInput.Items.Add(entry.Url & " — " & firstLine & " [" & entry.Model & "]")
+        Next
+        HistoryInput.Enabled = Not Running AndAlso History.Count > 0
+    End Sub
+
+    Private Sub SaveInputs(inputs As RunInputs)
+        History.RemoveAll(Function(entry) entry.Url = inputs.Url AndAlso entry.Charter = inputs.Charter AndAlso
+            entry.Model = inputs.Model AndAlso entry.YouTube = inputs.YouTube AndAlso
+            entry.ShowBrowser = inputs.ShowBrowser AndAlso entry.AssetOrigins = inputs.AssetOrigins)
+        History.Insert(0, inputs)
+        If History.Count > 25 Then History.RemoveRange(25, History.Count - 25)
+        UpdateHistory()
+        Try
+            Directory.CreateDirectory(Path.GetDirectoryName(HistoryPath))
+            Dim pending = HistoryPath & ".tmp"
+            File.WriteAllText(pending, JsonSerializer.Serialize(History))
+            File.Move(pending, HistoryPath, overwrite:=True)
+        Catch ex As Exception
+            Output.AppendText("Could not save run history: " & ex.Message & Environment.NewLine)
+        End Try
+    End Sub
+
+    Private Sub RestoreInputs(sender As Object, args As EventArgs)
+        If HistoryInput.SelectedIndex < 0 Then Return
+        Dim entry = History(HistoryInput.SelectedIndex)
+        UrlInput.Text = entry.Url
+        CharterInput.Text = entry.Charter
+        YouTube.Checked = entry.YouTube
+        ShowBrowser.Checked = entry.ShowBrowser
+        AssetInput.Text = entry.AssetOrigins
+        ModelInput.SelectedIndex = ModelInput.Items.IndexOf(entry.Model)
+        RunButton.Enabled = ModelInput.SelectedIndex >= 0 AndAlso RefreshModels.Enabled
+        StatusText.Text = If(ModelInput.SelectedIndex >= 0, "Inputs restored.", "Install the saved model or select another.")
+    End Sub
+
+    Private Sub ResetRecording()
+        If Player.CoreWebView2 IsNot Nothing Then Player.CoreWebView2.Navigate("about:blank")
+        Player.Visible = False
+        PlayerStatus.Text = "No recording available."
+        PlayerStatus.Visible = True
+    End Sub
+
+    Private Async Function LoadRecording(folder As String) As Task
+        Dim videoFolder = Path.Combine(folder, "video")
+        If Not Directory.Exists(videoFolder) Then Return
+        Dim video = Directory.EnumerateFiles(videoFolder, "*.webm").OrderBy(Function(videoPath) File.GetCreationTimeUtc(videoPath)).FirstOrDefault()
+        If video Is Nothing Then Return
+
+        Try
+            If Player.CoreWebView2 Is Nothing Then
+                Dim environment = Await CoreWebView2Environment.CreateAsync(
+                    userDataFolder:=Path.Combine(Path.GetDirectoryName(HistoryPath), "WebView2"))
+                Await Player.EnsureCoreWebView2Async(environment)
+            End If
+            Player.CoreWebView2.SetVirtualHostNameToFolderMapping("qa-recording.invalid", videoFolder,
+                                                                 CoreWebView2HostResourceAccessKind.Allow)
+            Dim source = "https://qa-recording.invalid/" & Uri.EscapeDataString(Path.GetFileName(video))
+            Player.CoreWebView2.NavigateToString(
+                "<!doctype html><html lang='en'><meta charset='utf-8'><title>QA recording</title>" &
+                "<body style='margin:0;background:#171717'><video controls preload='metadata' " &
+                "style='width:100vw;height:100vh' src='" & source & "'></video></body></html>")
+            PlayerStatus.Visible = False
+            Player.Visible = True
+            EvidenceTabs.SelectedTab = RecordingTab
+        Catch ex As Exception
+            PlayerStatus.Text = "Could not load the embedded player. Use Open artifacts to play the WebM file."
+            Output.AppendText(ex.Message & Environment.NewLine)
+        End Try
+    End Function
 
     Private Sub StopRun(sender As Object, args As EventArgs)
         If ActiveRunner Is Nothing OrElse ActiveRunner.HasExited Then Return
@@ -227,4 +351,13 @@ Friend Class QaForm
         End While
         Throw New DirectoryNotFoundException("Run the desktop app from a build inside the cloned repository.")
     End Function
+End Class
+
+Friend Class RunInputs
+    Public Property Url As String = ""
+    Public Property Charter As String = ""
+    Public Property Model As String = ""
+    Public Property YouTube As Boolean
+    Public Property ShowBrowser As Boolean = True
+    Public Property AssetOrigins As String = ""
 End Class

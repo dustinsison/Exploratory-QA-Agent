@@ -12,7 +12,11 @@ npx playwright install chromium
 dotnet run --project desktop
 ```
 
-Start Ollama before opening the app. The model picker lists installed models. Use **Refresh models** after downloading a model. Enter a URL and charter, choose the model, and click **Run test**. For dustinsison.com, enter `https://c0.wp.com` under **Allowed asset origins** and enable **Allow YouTube embeds** if the charter needs the background player. Enter multiple asset origins separated by commas.
+Start Ollama before opening the app. **Show live browser** opens a separate Chromium window so you can watch the test as it runs. Clear the checkbox to run headless. The CLI also accepts `--headed` when a graphical desktop is available.
+
+After a run, the **Recording** tab plays the saved WebM using the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). **Recent runs** restores the URL, charter, model, and options from up to 25 recent configurations stored locally under `%LOCALAPPDATA%\ExploratoryQaAgent`.
+
+The model picker lists installed models. Use **Refresh models** after downloading a model. Enter a URL and charter, choose the model, and click **Run test**. For dustinsison.com, enter `https://c0.wp.com` under **Allowed asset origins** and enable **Allow YouTube embeds** if the charter needs the background player. Enter multiple asset origins separated by commas.
 
 Click **Stop run** to end a test early. The agent cancels its Ollama wait or finishes the current browser action, then saves the partial report and recording. Click **Open artifacts** after the run to see its report, screenshot, and video. Both the app and the command line use folders such as `artifacts/run-dustinsison.com-2026-11-21-17-30-00-125/`. The name uses the starting hostname and local date and time, including milliseconds.
 
