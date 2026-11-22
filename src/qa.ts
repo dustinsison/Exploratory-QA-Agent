@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, type Locator } from 'playwright';
 import { fillSavedPhone, phoneCountryLabel, PhoneInputError, phoneNextButtonName, waitForPhoneNextButton } from './phone.js';
 import { availableActions, fieldInputType } from './actions.js';
@@ -79,6 +80,13 @@ const maxSteps = 15;
 
 const stop = new AbortController();
 const requestStop = () => stop.abort();
+const observationMs = 3_000;
+async function observeAction(milliseconds = observationMs) {
+  if (milliseconds <= 0 || stop.signal.aborted) return;
+  await delay(milliseconds, undefined, { signal: stop.signal }).catch(error => {
+    if (!stop.signal.aborted) throw error;
+  });
+}
 if (values['desktop-control']) {
   process.stdin.once('end', requestStop);
   process.stdin.resume();
@@ -168,6 +176,7 @@ try {
   try {
     if (!stop.signal.aborted) {
       await page.goto(start.href, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+      if (!storefront) await observeAction();
     }
   } catch (error) {
     if (!stop.signal.aborted) throw error;
@@ -380,6 +389,7 @@ try {
         continue;
       }
       attemptedActions.add(attempt);
+      const actionStarted = performance.now();
       try {
         if (action === 'click') {
           if (role === 'link') {
@@ -396,6 +406,7 @@ try {
             ? { url: page.url(), field: phoneField.target } : undefined;
           await target.click();
           if (submittingPhone) submittedPhoneForm = submittingPhone;
+          await observeAction();
           if (navigationIssues.length > issueCount) throw new Error(navigationIssues[issueCount]);
           if (checkCredentialForm && credentialEntry.test(name)) enteredCredentialFlow = true;
         }
@@ -433,6 +444,7 @@ try {
           if (savedValue) filledProfileVariable = true;
         } else if (action === 'select' && option !== undefined) await target.selectOption({ label: option });
         else throw new Error('Unsupported action or value.');
+        if (action !== 'click') await observeAction();
         if (prioritizeSearch) searchProgress = searchProgress === 'fill' ? 'submit' : 'done';
         completedActions++;
         const notice = `Executed ${description}`;
@@ -449,6 +461,7 @@ try {
           }
         }
       } catch (error) {
+        await observeAction(observationMs - (performance.now() - actionStarted));
         const detailText = error instanceof PhoneInputError ? error.message
           : reference ? 'Could not fill the saved variable.' : redact(String(error));
         const notice = `${description} failed — ${detailText.split('\n')[0]}`;
