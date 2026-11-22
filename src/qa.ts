@@ -64,7 +64,7 @@ function displayUrl(url: URL) {
 const mediaObservations = new Set<string>();
 let completedActions = 0;
 let filledProfileVariable = false;
-let submittedPhoneForm: { url: string; field: Locator } | undefined;
+let phoneTransitionTimedOut = false;
 let phoneNextState: Awaited<ReturnType<typeof waitForPhoneNextButton>>;
 let completedPhoneField: { url: string; role: string; name: string; value: string } | undefined;
 let recheckedCredentialForm = false;
@@ -86,6 +86,19 @@ async function observeAction(milliseconds = observationMs) {
   await delay(milliseconds, undefined, { signal: stop.signal }).catch(error => {
     if (!stop.signal.aborted) throw error;
   });
+}
+const phoneTransitionMs = 12_000;
+async function waitForPhoneTransition(url: string, field: Locator): Promise<boolean> {
+  const verificationField = field.page().locator('input[autocomplete~="one-time-code"]:visible')
+    .or(field.page().getByRole('textbox', { name: /\botp\b|verification code|one[ -]time code/i })
+      .and(field.page().locator(':visible')));
+  const deadline = Date.now() + phoneTransitionMs;
+  while (!stop.signal.aborted) {
+    if (field.page().url() !== url || !await field.isVisible() || await verificationField.count() > 0) return true;
+    if (Date.now() >= deadline) return false;
+    await observeAction(200);
+  }
+  return false;
 }
 if (values['desktop-control']) {
   process.stdin.once('end', requestStop);
@@ -390,6 +403,7 @@ try {
       }
       attemptedActions.add(attempt);
       const actionStarted = performance.now();
+      let submittingPhone: { url: string; field: Locator } | undefined;
       try {
         if (action === 'click') {
           if (role === 'link') {
@@ -402,10 +416,9 @@ try {
             }
           }
           const issueCount = navigationIssues.length;
-          const submittingPhone = advance && phoneField && phoneNextButtonName.test(name)
+          submittingPhone = advance && phoneField && phoneNextButtonName.test(name)
             ? { url: page.url(), field: phoneField.target } : undefined;
           await target.click();
-          if (submittingPhone) submittedPhoneForm = submittingPhone;
           await observeAction();
           if (navigationIssues.length > issueCount) throw new Error(navigationIssues[issueCount]);
           if (checkCredentialForm && credentialEntry.test(name)) enteredCredentialFlow = true;
@@ -450,6 +463,17 @@ try {
         const notice = `Executed ${description}`;
         console.error(notice);
         steps.push(notice);
+        if (submittingPhone && !stop.signal.aborted) {
+          console.error('Waiting for the phone form to advance…');
+          const advanced = await waitForPhoneTransition(submittingPhone.url, submittingPhone.field);
+          if (stop.signal.aborted) break;
+          if (!advanced) {
+            phoneTransitionTimedOut = true;
+            steps.push(`Stopped on the phone form after waiting up to ${(observationMs + phoneTransitionMs) / 1_000} seconds for the next step.`);
+            break;
+          }
+          steps.push('Observed a page or verification-field change after clicking Continue or Next.');
+        }
         if (action === 'fill' && enteredCredentialFlow && reference && variables.get(reference)?.kind === 'phone' && completedPhoneField) {
           phoneNextState = await waitForPhoneNextButton(page, completedPhoneField.url, stop.signal);
           if (phoneNextState) {
@@ -477,8 +501,6 @@ try {
     if (!stop.signal.aborted) throw error;
   }
 
-  const remainedOnPhoneForm = submittedPhoneForm && page.url() === submittedPhoneForm.url
-    && await submittedPhoneForm.field.isVisible().catch(() => false);
   await page.screenshot({ path: join(output, 'final.png'), timeout: 5_000 });
   const video = page.video();
   await context.close();
@@ -489,7 +511,7 @@ try {
     finding = '';
     console.error(summary);
     process.exitCode = 130;
-  } else if (remainedOnPhoneForm) {
+  } else if (phoneTransitionTimedOut) {
     summary = 'Incomplete run. The saved phone number was entered and Continue or Next was clicked, but the browser was still on the phone form when the run ended. The verification screen was not confirmed.';
     if (phoneNetworkIssues.size) summary += ' See Phone step network diagnostics for the observed request failures.';
     finding = '';
