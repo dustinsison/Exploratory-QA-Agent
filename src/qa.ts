@@ -9,7 +9,7 @@ import { acceptsVariable, readVariables, redactVariables } from './variables.js'
 import { isYouTubeEmbedRequest } from './youtube.js';
 
 const { values } = parseArgs({
-  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true }, 'allow-all-asset-origins': { type: 'boolean' }, 'allow-youtube-embeds': { type: 'boolean' }, 'desktop-control': { type: 'boolean' }, headed: { type: 'boolean' } },
+  options: { url: { type: 'string' }, charter: { type: 'string' }, model: { type: 'string' }, storefront: { type: 'boolean' }, 'asset-origin': { type: 'string', multiple: true }, 'allow-all-asset-origins': { type: 'boolean' }, 'allow-off-site-api': { type: 'boolean' }, 'allow-youtube-embeds': { type: 'boolean' }, 'desktop-control': { type: 'boolean' }, headed: { type: 'boolean' } },
 });
 const storefront = values.storefront === true;
 const charter = storefront
@@ -136,6 +136,9 @@ try {
     if (isAsset && (values['allow-all-asset-origins'] || assetOrigins.has(origin))) {
       return route.continue();
     }
+    if (values['allow-off-site-api'] && /^https?:\/\//.test(origin) && isPageApi(request.resourceType())) {
+      return route.continue();
+    }
     if (values['allow-youtube-embeds'] && isYouTubeEmbedRequest(request, start.origin)) return route.continue();
     if (values['desktop-control'] && isAsset && !blockedAssetOrigins.has(origin)) {
       blockedAssetOrigins.add(origin);
@@ -168,7 +171,7 @@ try {
   page.on('requestfailed', request => {
     if (observingPhoneRequests && isPageApi(request.resourceType())) {
       const { origin } = new URL(request.url());
-      if (origin === start.origin) {
+      if (origin === start.origin || values['allow-off-site-api']) {
         phoneNetworkIssues.add(`A page request to ${origin} failed — ${request.failure()?.errorText ?? 'unknown error'}.`);
       }
     }
@@ -544,8 +547,9 @@ try {
       `Saved variables available to this run: ${[...variables].map(([name, entry]) => `\`${name}\` (${entry.kind})`).join(', ')}.`,
       '', ...[...credentialDiagnostics].map(info => `- ${info}`),
     ] : []),
-    ...(phoneNetworkIssues.size || phoneNextState === 'disabled' ? [
+    ...(observingPhoneRequests || phoneNetworkIssues.size || phoneNextState === 'disabled' ? [
       '', '## Phone step network diagnostics', '',
+      `Off-site API requests: ${values['allow-off-site-api'] ? 'allowed' : 'blocked by default'}.`, '',
       ...(phoneNetworkIssues.size ? [...phoneNetworkIssues].map(issue => `- ${redact(issue)}`)
         : ['No blocked or failed page API requests were observed during the phone step.']),
     ] : []),

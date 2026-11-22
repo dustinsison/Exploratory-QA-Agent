@@ -34,6 +34,9 @@ Partial Friend Class QaForm
     Private ReadOnly AllowAllAssets As New CheckBox With {
         .Text = "Allow all asset origins", .AutoSize = True
     }
+    Private ReadOnly AllowOffSiteApi As New CheckBox With {
+        .Text = "Allow off-site API requests", .AutoSize = True
+    }
     Private ReadOnly AssetStatus As New Label With {.Dock = DockStyle.Top, .Height = 44}
     Private ReviewingAssets As Boolean
     Private ReadOnly EvidenceTabs As New TabControl With {.Dock = DockStyle.Fill}
@@ -75,7 +78,10 @@ Partial Friend Class QaForm
         modelRow.Controls.Add(RefreshModels)
         AddField(layout, "Ollama model", modelRow)
         AddField(layout, "Additional asset origins", AssetInput)
-        AddField(layout, "", AllowAllAssets)
+        Dim networkOptions As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False}
+        networkOptions.Controls.Add(AllowAllAssets)
+        networkOptions.Controls.Add(AllowOffSiteApi)
+        AddField(layout, "", networkOptions)
         Dim options As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False}
         options.Controls.Add(YouTube)
         options.Controls.Add(ShowBrowser)
@@ -104,7 +110,8 @@ Partial Friend Class QaForm
         RefreshAssetList()
         AddHandler UrlInput.TextChanged, Sub(sender, args) RefreshAssetList()
         AddHandler AssetList.ItemCheck, AddressOf ChangeAssetSetting
-        AddHandler AllowAllAssets.CheckedChanged, AddressOf ChangeAllAssetSettings
+        AddHandler AllowAllAssets.CheckedChanged, AddressOf ChangeNetworkSettings
+        AddHandler AllowOffSiteApi.CheckedChanged, AddressOf ChangeNetworkSettings
         AddHandler HistoryInput.SelectionChangeCommitted, AddressOf RestoreInputs
 
         AddHandler Shown, AddressOf LoadModels
@@ -212,8 +219,9 @@ Partial Friend Class QaForm
             If inputs.ShowBrowser Then startInfo.ArgumentList.Add("--headed")
             Dim siteOrigin = address.GetLeftPart(UriPartial.Authority)
             Dim profile As WebsiteProfile = Nothing
-            If Profiles.TryGetValue(siteOrigin, profile) AndAlso profile.AllowAllAssetOrigins Then
-                startInfo.ArgumentList.Add("--allow-all-asset-origins")
+            If Profiles.TryGetValue(siteOrigin, profile) Then
+                If profile.AllowAllAssetOrigins Then startInfo.ArgumentList.Add("--allow-all-asset-origins")
+                If profile.AllowOffSiteApi Then startInfo.ArgumentList.Add("--allow-off-site-api")
             End If
             For Each origin In GetAllowedAssets(siteOrigin, inputs.AssetOrigins)
                 startInfo.ArgumentList.Add("--asset-origin")
@@ -468,7 +476,10 @@ Partial Friend Class QaForm
             AssetList.Items.Clear()
             Dim profile As WebsiteProfile = Nothing
             AllowAllAssets.Enabled = site <> ""
-            AllowAllAssets.Checked = Profiles.TryGetValue(site, profile) AndAlso profile.AllowAllAssetOrigins
+            Profiles.TryGetValue(site, profile)
+            AllowAllAssets.Checked = profile IsNot Nothing AndAlso profile.AllowAllAssetOrigins
+            AllowOffSiteApi.Enabled = site <> ""
+            AllowOffSiteApi.Checked = profile IsNot Nothing AndAlso profile.AllowOffSiteApi
             Dim saved As Dictionary(Of String, Boolean) = Nothing
             If site <> "" AndAlso AssetSettings.TryGetValue(site, saved) Then
                 For Each origin In saved.OrderBy(Function(entry) entry.Key)
@@ -487,12 +498,14 @@ Partial Friend Class QaForm
         End If
     End Sub
 
-    Private Sub ChangeAllAssetSettings(sender As Object, args As EventArgs)
+    Private Sub ChangeNetworkSettings(sender As Object, args As EventArgs)
         If ReviewingAssets Then Return
         Dim origin = CurrentSite()
         If origin = "" Then Return
 
-        GetProfile(origin).AllowAllAssetOrigins = AllowAllAssets.Checked
+        Dim profile = GetProfile(origin)
+        profile.AllowAllAssetOrigins = AllowAllAssets.Checked
+        profile.AllowOffSiteApi = AllowOffSiteApi.Checked
         WriteProfiles()
         RefreshProfilePicker(origin)
         RefreshAssetList()
