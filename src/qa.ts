@@ -66,6 +66,9 @@ const mediaObservations = new Set<string>();
 let completedActions = 0;
 let filledProfileVariable = false;
 let enteredOtp = false;
+const appDownloadPrompt = /\bdownload (?:the |our )?(?:[\w-]+ ){0,3}app\b/i;
+const expectsAppHandoff = /\bafter\s+(?:entering|submitting)\s+(?:the\s+)?(?:otp|verification code)\b/i.test(charter)
+  && /\bshould (?:see|show|display|prompt)\b[^.!?]*\bdownload (?:the |our )?(?:[\w-]+ ){0,3}app\b/i.test(charter);
 let attemptedOtpEntry = false;
 let phoneTransitionTimedOut = false;
 let phoneNextState: Awaited<ReturnType<typeof waitForPhoneNextButton>>;
@@ -416,10 +419,11 @@ try {
           process.exitCode = 1;
           break;
         }
-        if (typeof result === 'string') summary = redact(result);
+        summary = typeof result === 'string' && result.trim()
+          ? redact(result) : 'Ollama ended the run without a summary.';
         const quote = typeof evidence === 'string' ? evidence.trim() : '';
         if (quote.length >= 3 && safeSnapshot.includes(quote)) {
-          if (modelVerdict === 'pass') verdict = 'Pass';
+          if (modelVerdict === 'pass' && !expectsAppHandoff) verdict = 'Pass';
           if (modelVerdict === 'fail' && typeof expected === 'string' && expected.trim()
             && typeof actual === 'string' && actual.trim()) verdict = 'Fail';
           if (verdict !== 'Inconclusive') verdictEvidence = `Page evidence: “${redact(quote)}”`;
@@ -451,6 +455,7 @@ try {
       attemptedActions.add(attempt);
       const actionStarted = performance.now();
       let submittingPhone: { url: string; field: Locator } | undefined;
+      let checkingAppHandoff = false;
       try {
         if (action === 'click') {
           if (role === 'link') {
@@ -499,6 +504,8 @@ try {
               console.error(note);
             }
           } else if (reference && variables.get(reference)?.kind === 'otp') {
+            checkingAppHandoff = expectsAppHandoff
+              && !await page.getByText(appDownloadPrompt).and(page.locator(':visible')).count();
             attemptedOtpEntry = true;
             await enterOtp(target, otpSlots, input, start.origin);
             enteredOtp = true;
@@ -515,6 +522,25 @@ try {
         const notice = `Executed ${description}`;
         console.error(notice);
         steps.push(notice);
+        if (checkingAppHandoff && !stop.signal.aborted) {
+          const prompt = page.getByText(appDownloadPrompt).and(page.locator(':visible')).first();
+          const deadline = Date.now() + 10_000;
+          while (!stop.signal.aborted && Date.now() < deadline) {
+            if (await prompt.isVisible().catch(() => false)) {
+              const evidence = (await prompt.innerText({ timeout: 1_000 }).catch(() => '')).trim();
+              const line = evidence.split('\n').find(text => appDownloadPrompt.test(text));
+              if (line) {
+                verdict = 'Pass';
+                verdictEvidence = `Page evidence: “${redact(line.trim())}”`;
+                summary = 'The homepage loaded and the app-download prompt appeared after the saved verification code was entered.';
+                steps.push('Verified the app-download prompt after OTP entry.');
+                break;
+              }
+            }
+            await observeAction(200);
+          }
+          if (verdict === 'Pass') break;
+        }
         if (submittingPhone && !stop.signal.aborted) {
           console.error('Waiting for the phone form to advance…');
           const advanced = await waitForPhoneTransition(submittingPhone.url, submittingPhone.field);
