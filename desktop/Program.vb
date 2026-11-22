@@ -26,6 +26,7 @@ Partial Friend Class QaForm
     Private ReadOnly RefreshModels As New Button With {.Text = "Refresh models", .AutoSize = True}
     Private ReadOnly YouTube As New CheckBox With {.Text = "Allow YouTube embeds", .AutoSize = True}
     Private ReadOnly ShowBrowser As New CheckBox With {.Text = "Show live browser", .AutoSize = True, .Checked = True}
+    Private ReadOnly ClearRecentButton As New Button With {.Text = "Clear recent", .AutoSize = True, .Enabled = False}
     Private ReadOnly HistoryInput As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList}
     Private ReadOnly History As New List(Of RunInputs)
     Private ReadOnly AssetSettings As New Dictionary(Of String, Dictionary(Of String, Boolean))(StringComparer.OrdinalIgnoreCase)
@@ -68,7 +69,14 @@ Partial Friend Class QaForm
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
         layout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         Controls.Add(layout)
-        AddField(layout, "Recent runs", HistoryInput)
+        Dim recentRow As New TableLayoutPanel With {.AutoSize = True, .ColumnCount = 2, .RowCount = 1}
+        recentRow.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
+        recentRow.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+        HistoryInput.Dock = DockStyle.Fill
+        recentRow.Controls.Add(HistoryInput, 0, 0)
+        recentRow.Controls.Add(ClearRecentButton, 1, 0)
+        AddField(layout, "Recent runs", recentRow)
+        AddHandler ClearRecentButton.Click, AddressOf ClearRecentRuns
         AddField(layout, "URL", UrlInput)
         CharterInput.Height = 95
         AddField(layout, "Charter", CharterInput)
@@ -193,6 +201,7 @@ Partial Friend Class QaForm
         RunButton.Enabled = False
         RefreshModels.Enabled = False
         HistoryInput.Enabled = False
+        ClearRecentButton.Enabled = False
         UrlInput.Enabled = False
         ProfilesTab.Enabled = False
         AssetsTab.Text = "Asset origins"
@@ -267,6 +276,7 @@ Partial Friend Class QaForm
             Running = False
             RefreshModels.Enabled = True
             HistoryInput.Enabled = History.Count > 0
+            ClearRecentButton.Enabled = History.Count > 0
             UrlInput.Enabled = True
             ProfilesTab.Enabled = True
             RunButton.Enabled = ModelInput.SelectedIndex >= 0
@@ -315,6 +325,7 @@ Partial Friend Class QaForm
             HistoryInput.Items.Add(entry.Url & " — " & firstLine & " [" & entry.Model & "]")
         Next
         HistoryInput.Enabled = Not Running AndAlso History.Count > 0
+        ClearRecentButton.Enabled = HistoryInput.Enabled
     End Sub
 
     Private Sub SaveInputs(inputs As RunInputs)
@@ -324,15 +335,35 @@ Partial Friend Class QaForm
         History.Insert(0, inputs)
         If History.Count > 25 Then History.RemoveRange(25, History.Count - 25)
         UpdateHistory()
+        WriteHistory()
+    End Sub
+
+    Private Sub ClearRecentRuns(sender As Object, args As EventArgs)
+        If Running OrElse History.Count = 0 Then Return
+        If Not ConfirmClear("Clear the Recent runs menu? Saved charters and previous results in website profiles will stay available.") Then Return
+        Dim previous As New List(Of RunInputs)(History)
+        History.Clear()
+        If WriteHistory() Then
+            UpdateHistory()
+            StatusText.Text = "Recent runs cleared."
+        Else
+            History.AddRange(previous)
+            StatusText.Text = "Could not clear recent runs. See Activity for details."
+        End If
+    End Sub
+
+    Private Function WriteHistory() As Boolean
         Try
             Directory.CreateDirectory(Path.GetDirectoryName(HistoryPath))
             Dim pending = HistoryPath & ".tmp"
             File.WriteAllText(pending, JsonSerializer.Serialize(History))
             File.Move(pending, HistoryPath, overwrite:=True)
+            Return True
         Catch ex As Exception
             Output.AppendText("Could not save run history: " & ex.Message & Environment.NewLine)
+            Return False
         End Try
-    End Sub
+    End Function
 
     Private Sub RestoreInputs(sender As Object, args As EventArgs)
         If HistoryInput.SelectedIndex < 0 Then Return

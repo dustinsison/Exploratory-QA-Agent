@@ -39,10 +39,16 @@ Partial Friend Class QaForm
         Dim actions = layout.RowCount
         layout.RowCount += 1
         layout.RowStyles.Add(New RowStyle(SizeType.AutoSize))
-        layout.Controls.Add(ProfileButton("Use charter", AddressOf UseSavedCharter), 0, actions)
+        Dim charterActions As New FlowLayoutPanel With {.AutoSize = True, .Dock = DockStyle.Fill}
+        charterActions.Controls.Add(ProfileButton("Use charter", AddressOf UseSavedCharter))
+        charterActions.Controls.Add(ProfileButton("Remove selected", Sub(sender, args) RemoveSavedCharters(False)))
+        charterActions.Controls.Add(ProfileButton("Clear charters", Sub(sender, args) RemoveSavedCharters(True)))
+        layout.Controls.Add(charterActions, 0, actions)
         Dim runActions As New FlowLayoutPanel With {.AutoSize = True, .Dock = DockStyle.Fill}
         runActions.Controls.Add(ProfileButton("View run", AddressOf ViewSavedRun))
         runActions.Controls.Add(ProfileButton("Import report…", AddressOf ImportReport))
+        runActions.Controls.Add(ProfileButton("Remove selected", Sub(sender, args) RemoveSavedRuns(False)))
+        runActions.Controls.Add(ProfileButton("Clear runs", Sub(sender, args) RemoveSavedRuns(True)))
         layout.Controls.Add(runActions, 1, actions)
 
         ProfilesTab.Controls.Add(layout)
@@ -116,16 +122,18 @@ Partial Friend Class QaForm
         RefreshProfilePicker(siteOrigin)
     End Sub
 
-    Private Sub WriteProfiles()
+    Private Function WriteProfiles() As Boolean
         Try
             Directory.CreateDirectory(Path.GetDirectoryName(ProfilePath))
             Dim pending = ProfilePath & ".tmp"
             File.WriteAllText(pending, JsonSerializer.Serialize(Profiles))
             File.Move(pending, ProfilePath, overwrite:=True)
+            Return True
         Catch ex As Exception
             Output.AppendText("Could not save website profiles: " & ex.Message & Environment.NewLine)
+            Return False
         End Try
-    End Sub
+    End Function
 
     Private Sub RefreshProfilePicker(Optional selectedOrigin As String = Nothing)
         selectedOrigin = If(selectedOrigin, TryCast(ProfilePicker.SelectedItem, String))
@@ -151,6 +159,58 @@ Partial Friend Class QaForm
             SavedRuns.Items.Add(run)
         Next
     End Sub
+
+    Private Function ConfirmClear(message As String) As Boolean
+        Return MessageBox.Show(Me, message, "Clear saved items", MessageBoxButtons.YesNo,
+                               MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) = DialogResult.Yes
+    End Function
+
+    Private Sub RemoveSavedCharters(clearAll As Boolean)
+        Dim origin = TryCast(ProfilePicker.SelectedItem, String)
+        If Running OrElse origin Is Nothing Then Return
+        Dim removed = RemoveProfileItems(Profiles(origin).Charters, TryCast(SavedCharters.SelectedItem, RunInputs),
+                                         clearAll, "charter", origin, "")
+        If removed.Count > 0 Then StatusText.Text = If(clearAll, "Saved charters cleared.", "Saved charter removed.")
+    End Sub
+
+    Private Sub RemoveSavedRuns(clearAll As Boolean)
+        Dim origin = TryCast(ProfilePicker.SelectedItem, String)
+        If Running OrElse origin Is Nothing Then Return
+        Dim removed = RemoveProfileItems(Profiles(origin).Runs, TryCast(SavedRuns.SelectedItem, ProfileRun),
+                                         clearAll, "run", origin, " Reports, screenshots, and recordings will stay on disk.")
+        If removed.Count = 0 Then Return
+        If removed.Any(Function(entry) String.Equals(Path.GetDirectoryName(entry.ReportPath), ArtifactFolder,
+                                                     StringComparison.OrdinalIgnoreCase)) Then
+            ResetRunEvidence()
+        End If
+        StatusText.Text = If(clearAll, "Previous runs cleared.", "Previous run removed.")
+    End Sub
+
+    Private Function RemoveProfileItems(Of T As Class)(items As List(Of T), selected As T, clearAll As Boolean,
+                                                       label As String, origin As String, note As String) As List(Of T)
+        Dim removed As New List(Of T)
+        If items.Count = 0 OrElse (Not clearAll AndAlso selected Is Nothing) Then Return removed
+        Dim action = If(clearAll, "Clear all saved " & label & "s", "Remove the selected " & label)
+        If Not ConfirmClear(action & " for " & origin & "?" & note) Then Return removed
+
+        Dim previous As New List(Of T)(items)
+        If clearAll Then
+            removed.AddRange(items)
+            items.Clear()
+        ElseIf items.Remove(selected) Then
+            removed.Add(selected)
+        End If
+
+        If Not WriteProfiles() Then
+            items.Clear()
+            items.AddRange(previous)
+            StatusText.Text = "Could not save changes. See Activity for details."
+            removed.Clear()
+            Return removed
+        End If
+        RefreshProfileLists()
+        Return removed
+    End Function
 
     Private Sub SaveCurrentProfile(sender As Object, args As EventArgs)
         Dim origin = CurrentSite()
