@@ -1,4 +1,5 @@
 import type { Locator, Page } from 'playwright';
+import { findOtpSlots } from './otp.js';
 
 interface BrowserAction {
   kind: 'click' | 'fill' | 'select';
@@ -7,12 +8,18 @@ interface BrowserAction {
   target: Locator;
   option?: string;
   fieldType?: string;
+  otpSlots?: Locator;
 }
 
-export async function availableActions(page: Page, snapshot: string, includePasswords = false, includePhones = false): Promise<BrowserAction[]> {
+export async function availableActions(page: Page, snapshot: string, includePasswords = false, includePhones = false, includeOtp = false): Promise<BrowserAction[]> {
   const controls = /^\s*- (button|link|textbox|searchbox|combobox|checkbox|radio|tab|spinbutton)(?: ("(?:[^"\\]|\\.)*"))?(?=\s|:|$)([^\n]*)/gm;
   const actions: BrowserAction[] = [];
   const seen = new Set<string>();
+  const otpSlots = includeOtp ? await findOtpSlots(page, snapshot) : undefined;
+  if (otpSlots) actions.push({
+    kind: 'fill', role: 'textbox', name: 'Verification code (digit boxes)',
+    fieldType: 'one-time-code', target: otpSlots.first(), otpSlots,
+  });
 
   for (const [, matchedRole, quotedName, state] of snapshot.matchAll(controls)) {
     if (actions.length >= 60) break;
@@ -36,7 +43,7 @@ export async function availableActions(page: Page, snapshot: string, includePass
       }
     } else if (role === 'textbox' || role === 'searchbox' || role === 'spinbutton') {
       const fieldType = await fieldInputType(target);
-      if (fieldType !== 'password' && await target.isEditable()) {
+      if (fieldType !== 'password' && !(otpSlots && fieldType === 'one-time-code') && await target.isEditable()) {
         const fieldName = name || await target.getAttribute('placeholder', { timeout: 1_000 }) || '';
         actions.push({ kind: 'fill', name: fieldName, role, target, fieldType });
       }

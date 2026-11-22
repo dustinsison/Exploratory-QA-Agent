@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, type Locator } from 'playwright';
 import { fillSavedPhone, phoneCountryLabel, PhoneInputError, phoneNextButtonName, waitForPhoneNextButton } from './phone.js';
+import { enterOtp } from './otp.js';
 import { availableActions, fieldInputType } from './actions.js';
 import { acceptsVariable, readVariables, redactVariables } from './variables.js';
 import { isYouTubeEmbedRequest } from './youtube.js';
@@ -64,6 +65,8 @@ function displayUrl(url: URL) {
 const mediaObservations = new Set<string>();
 let completedActions = 0;
 let filledProfileVariable = false;
+let enteredOtp = false;
+let attemptedOtpEntry = false;
 let phoneTransitionTimedOut = false;
 let phoneNextState: Awaited<ReturnType<typeof waitForPhoneNextButton>>;
 let completedPhoneField: { url: string; role: string; name: string; value: string } | undefined;
@@ -233,7 +236,7 @@ try {
       const pageState = JSON.stringify([page.url(), snapshot]);
       const sameOrigin = new URL(page.url()).origin === start.origin;
       const hasKind = (kind: string) => sameOrigin && [...variables.values()].some(variable => variable.kind === kind);
-      const actions = await availableActions(page, snapshot, hasKind('password') || hasKind('pin') || hasKind('otp'), hasKind('phone'));
+      const actions = await availableActions(page, snapshot, hasKind('password') || hasKind('pin') || hasKind('otp'), hasKind('phone'), checkCredentialForm && hasKind('otp'));
       const previousPhone = completedPhoneField;
       const phoneField = previousPhone && previousPhone.url === page.url()
         ? actions.find(action => action.kind === 'fill' && action.role === previousPhone.role && action.name === previousPhone.name)
@@ -252,7 +255,10 @@ try {
       const compatible = (fieldType: string | undefined, name: string) => fieldType && sameOrigin
         ? [...variables].filter(([key, variable]) => acceptsVariable(variable.kind, fieldType, name, key)).map(([key]) => key)
         : [];
-      const credentialChoices = enteredCredentialFlow && !filledProfileVariable
+      const otpChoices = enteredCredentialFlow && !enteredOtp
+        ? available.filter(({ fieldType, name }) => compatible(fieldType, name).some(key => variables.get(key)?.kind === 'otp'))
+        : [];
+      const credentialChoices = otpChoices.length ? otpChoices : enteredCredentialFlow && !filledProfileVariable
         ? available.filter(({ fieldType, name }) => compatible(fieldType, name).length)
         : [];
       if (enteredCredentialFlow && !filledProfileVariable) {
@@ -295,7 +301,9 @@ try {
         { role: 'user', content: JSON.stringify({ charter: redact(charter), choices: choices.map(choice => ({
           ...choice, name: redact(choice.name), text: choice.text === undefined ? undefined : redact(choice.text), option: choice.option === undefined ? undefined : redact(choice.option),
         })), steps, enteredCredentialFlow, phoneStillFilled, credentialVariables: [...variables].map(([name, entry]) => ({ name, kind: entry.kind })),
-        currentUrl: redact(displayUrl(new URL(page.url()))), navigationIssues, snapshot: redact(snapshot), mediaObservations: [...mediaObservations].map(redact) }) },
+        currentUrl: redact(displayUrl(new URL(page.url()))), navigationIssues, snapshot: redact(attemptedOtpEntry
+          ? snapshot.replace(/^(\s*- (?:textbox|spinbutton)\b[^\r\n]*?:)\s+"?\d"?(?=\s*$)/gm, '$1 [profile digit]')
+          : snapshot), mediaObservations: [...mediaObservations].map(redact) }) },
       ];
       if (stop.signal.aborted) break;
       console.error(`Step ${index}: waiting for ${model}…`);
@@ -387,7 +395,7 @@ try {
         break;
       }
 
-      const { kind: action, role, name, target, option } = candidates[choice - 1];
+      const { kind: action, role, name, target, option, otpSlots } = candidates[choice - 1];
       const selected = choices[choice - 1];
       const inlineReference = typeof value === 'string' ? /^\{\{([a-z][a-z0-9_-]*)\}\}$/i.exec(value.trim())?.[1] : undefined;
       const requestedVariable = typeof variable === 'string' && variable ? variable : inlineReference;
@@ -427,7 +435,7 @@ try {
           if (checkCredentialForm && credentialEntry.test(name)) enteredCredentialFlow = true;
         }
         else if (action === 'fill') {
-          const type = await fieldInputType(target);
+          const type = otpSlots ? 'one-time-code' : await fieldInputType(target);
           if (reference && (!savedValue || new URL(page.url()).origin !== start.origin
             || !acceptsVariable(variables.get(reference)!.kind, type, name, reference))) {
             throw new PhoneInputError('That profile variable is unavailable for this field or site.');
@@ -454,6 +462,11 @@ try {
               steps.push(note);
               console.error(note);
             }
+          } else if (reference && variables.get(reference)?.kind === 'otp') {
+            attemptedOtpEntry = true;
+            await enterOtp(target, otpSlots, input, start.origin);
+            enteredOtp = true;
+            steps.push('Entered the saved verification code one digit at a time.');
           } else {
             await target.fill(input);
           }
