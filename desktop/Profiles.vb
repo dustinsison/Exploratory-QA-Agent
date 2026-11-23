@@ -49,12 +49,14 @@ Partial Friend Class QaForm
         runActions.Controls.Add(ProfileButton("Import report…", AddressOf ImportReport))
         runActions.Controls.Add(ProfileButton("Remove selected", Sub(sender, args) RemoveSavedRuns(False)))
         runActions.Controls.Add(ProfileButton("Clear runs", Sub(sender, args) RemoveSavedRuns(True)))
+        runActions.Controls.Add(ProfileButton("Compare", AddressOf CompareSelectedRun))
+        runActions.Controls.Add(ProfileButton("Reuse run inputs", AddressOf ReuseRunInputs))
         layout.Controls.Add(runActions, 1, actions)
 
         ProfilesTab.Controls.Add(layout)
-        ReportTab.Controls.Add(ReportText)
         EvidenceTabs.TabPages.Add(ProfilesTab)
         EvidenceTabs.TabPages.Add(ReportTab)
+        InitializeRunReview()
         AddHandler ProfilePicker.SelectedIndexChanged, Sub(sender, args) RefreshProfileLists()
         AddHandler SavedCharters.DoubleClick, AddressOf UseSavedCharter
         AddHandler SavedRuns.DoubleClick, AddressOf ViewSavedRun
@@ -265,6 +267,10 @@ Partial Friend Class QaForm
         ArtifactFolder = Nothing
         OpenButton.Enabled = False
         ReportText.Text = message
+        DisplayedRun = Nothing
+        DisplayedReport = Nothing
+        ExportButton.Enabled = False
+        TimelineList.Items.Clear()
         ResetRecording()
     End Sub
 
@@ -273,6 +279,12 @@ Partial Friend Class QaForm
         ResetRunEvidence()
         RenderReport(report)
         ArtifactFolder = Path.GetDirectoryName(reportPath)
+        DisplayedReport = reportPath
+        DisplayedRun = ReadRunMetadata(reportPath)
+        If DisplayedRun IsNot Nothing Then
+            TimelineList.Items.AddRange(DisplayedRun.Timeline.Cast(Of Object)().ToArray())
+        End If
+        ExportButton.Enabled = True
         OpenButton.Enabled = True
         If EvidenceTabs.SelectedTab IsNot AssetsTab Then EvidenceTabs.SelectedTab = ReportTab
         Await LoadRecording(ArtifactFolder)
@@ -322,6 +334,7 @@ Friend Class ProfileRun
     Public Property RecordedAt As DateTimeOffset
     Public Property Status As String = ""
     Public Property Charter As String = ""
+    Public Property Inputs As RunInputs
 
     <System.Text.Json.Serialization.JsonIgnore>
     Public ReadOnly Property DisplayText As String

@@ -55,6 +55,7 @@ Partial Friend Class QaForm
         .Multiline = True, .ReadOnly = True, .ScrollBars = ScrollBars.Vertical, .Dock = DockStyle.Fill
     }
     Private ArtifactFolder As String
+    Private RecordingAvailable As Boolean
     Private Running As Boolean
 
     Public Sub New()
@@ -256,7 +257,7 @@ Partial Friend Class QaForm
                         SaveRun(address.GetLeftPart(UriPartial.Authority), New ProfileRun With {
                             .ReportPath = reportPath, .RecordedAt = DateTimeOffset.Now,
                             .Status = If(runner.ExitCode = 0, "Finished", If(runner.ExitCode = 130, "Stopped", "Incomplete")),
-                            .Charter = inputs.Charter
+                            .Charter = inputs.Charter, .Inputs = inputs
                         })
                         Await ShowRunEvidence(reportPath)
                     End If
@@ -299,6 +300,7 @@ Partial Friend Class QaForm
         AssetsTab.Text = "Asset origins"
         ResetRunEvidence()
         Output.Clear()
+        CompareText.Clear()
         StatusText.Text = "New session"
         RunButton.Enabled = False
         EvidenceTabs.SelectedIndex = 0
@@ -382,6 +384,7 @@ Partial Friend Class QaForm
     End Sub
 
     Private Sub ResetRecording()
+        RecordingAvailable = False
         If Player.CoreWebView2 IsNot Nothing Then Player.CoreWebView2.Navigate("about:blank")
         Player.Visible = False
         PlayerStatus.Text = "No recording available."
@@ -410,6 +413,7 @@ Partial Friend Class QaForm
                 "style='width:100vw;height:100vh' src='" & source & "'></video></body></html>")
             PlayerStatus.Visible = False
             Player.Visible = True
+            RecordingAvailable = True
         Catch ex As Exception
             If ArtifactFolder <> folder Then Return
             PlayerStatus.Text = "Could not load the embedded player. Use Open artifacts to play the WebM file."
