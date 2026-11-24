@@ -224,6 +224,32 @@ try {
     if (!stop.signal.aborted) throw error;
   }
 
+  if (linkCheck.footer && !stop.signal.aborted) {
+    const started = performance.now();
+    const footers = page.getByRole('contentinfo').and(page.locator(':visible'));
+    try {
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      steps.push('Scrolled to the bottom of the page to inspect the footer.');
+      await observeAction();
+      if (await footers.count() > 0 && !stop.signal.aborted) {
+        await footers.last().scrollIntoViewIfNeeded({ timeout: 3_000 });
+      }
+      const links = await footers.getByRole('link').and(page.locator(':visible')).evaluateAll(elements =>
+        elements.map(element => (element.getAttribute('aria-label') || element.textContent?.trim()
+          || element.querySelector('img')?.alt || element.getAttribute('title') || '').replace(/\s+/g, ' ').trim()));
+      verdict = navigationIssues.length ? 'Inconclusive' : links.length ? 'Pass' : 'Fail';
+      const names = [...new Set(links.filter(Boolean))].slice(0, 10).map(redact).join(', ');
+      verdictEvidence = navigationIssues.length ? 'A navigation issue prevented verification of the starting page.'
+        : links.length ? `Found ${links.length} visible footer link${links.length === 1 ? '' : 's'}${names ? ` (including ${names})` : ''}.`
+          : await footers.count() ? 'The visible footer contains no visible links.' : 'No visible footer landmark was found at the bottom of the page.';
+      steps.push('Inspected the footer links without following them.');
+    } catch (error) {
+      verdictEvidence = `The footer could not be verified. ${redact(String(error)).split('\n')[0]}`;
+    }
+    summary = verdictEvidence;
+    recordTiming(started, 'Browser', 'Scrolled to the bottom and inspected footer links.');
+  }
+
   if (linkCheck.readOnly && linkCheck.name && !stop.signal.aborted) {
     const started = performance.now();
     const escapedName = linkCheck.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -271,7 +297,7 @@ try {
   }
 
   try {
-    for (let index = 1; !storefront && !(linkCheck.readOnly && linkCheck.name) && !stop.signal.aborted && index <= maxSteps; index++) {
+    for (let index = 1; !storefront && !(linkCheck.readOnly && (linkCheck.name || linkCheck.footer)) && !stop.signal.aborted && index <= maxSteps; index++) {
       const snapshot = (await page.locator('body').ariaSnapshot()).slice(0, 12_000);
       const observedUrl = page.url();
       const pageState = JSON.stringify([observedUrl, snapshot]);
